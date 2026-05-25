@@ -2028,7 +2028,7 @@ function getStaticTextAnswer(labelLower, profile) {
   if (/university|college(?!.*degree)|\bschool\b/i.test(labelLower) && labelLower.length < 50 && !/require|credit|do you|does your|will you|are you|have you|can you|is your/i.test(labelLower)) return profile.education.university;
 
   if (/graduation.*(date|year|when)|when.*graduat|expected.*graduation/i.test(labelLower)) return profile.education.graduationDate;
-  if (/current.*year|year.*school|academic.?year|year of study/i.test(labelLower)) return profile.education.currentYear;
+  if (/current.*year|year.*school|academic.?year|year of study|academic status|current.*(class|standing)|class standing|year in (college|school|university)/i.test(labelLower)) return profile.education.currentYear;
   if (/current.*(employ|employer|company)|most.?recent.*(employ|employer)/i.test(labelLower) &&
       !/sponsor|require an employ|visa|immigration|will you|work auth/i.test(labelLower)) return 'University of South Florida';
   if (/current.*(title|position|role)|most.?recent.*(title|position|role)/i.test(labelLower) && !/relocat/i.test(labelLower)) return 'C Programming Teaching Assistant';
