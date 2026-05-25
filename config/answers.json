@@ -1,0 +1,43 @@
+{
+  "shortAnswers": {
+    "startDate": "June 2026",
+    "workAuthorization": "I am authorized to work in the US on CPT authorization under my F-1 visa. I do not require sponsorship at this time.",
+    "relocation": "Open to relocation for the right opportunity.",
+    "remotePreference": "Comfortable with remote, hybrid, or in-person."
+  },
+
+  "checkboxDefaults": {
+    "requiresSponsorship": false,
+    "authorizedToWork": true,
+    "over18": true,
+    "agreeToTerms": true,
+    "backgroundCheckConsent": true,
+    "veteran": false,
+    "disability": false,
+    "legalCertification": true
+  },
+
+  "demographic": {
+    "gender": "Male",
+    "ethnicity": "South Asian",
+    "veteran": false,
+    "disability": false
+  },
+
+  "aiHandled": [
+    "Why this company",
+    "Why this role",
+    "Tell me about yourself",
+    "Greatest strength",
+    "Greatest weakness",
+    "Technical challenge",
+    "Teamwork example",
+    "Career goals",
+    "Why software engineering",
+    "Salary expectation"
+  ],
+
+  "orangeFlags": [
+    "How did you hear about this role"
+  ]
+}

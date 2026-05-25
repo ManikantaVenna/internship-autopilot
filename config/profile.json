@@ -1,0 +1,133 @@
+{
+  "personal": {
+    "firstName": "Manikanta Reddy",
+    "lastName": "Venna",
+    "preferredName": "Mani",
+    "email": "manikantarv54@gmail.com",
+    "phone": "+18134059902",
+    "city": "Tampa",
+    "state": "Florida",
+    "zip": "33613",
+    "country": "United States",
+    "address": "14511 Valor Circle, Tampa, Florida, 33613, United States",
+    "linkedin": "https://linkedin.com/in/manikantavenna",
+    "portfolio": ""
+},
+
+  "education": {
+    "university": "University of South Florida",
+    "degree": "Bachelor of Science",
+    "major": "Computer Science",
+    "gpa": "4.0",
+    "gpaScale": "4.0",
+    "graduationDate": "May 2027",
+    "startMonth": "August",
+    "currentYear": "Sophomore",
+    "location": "Tampa, FL"
+  },
+
+  "workAuthorization": {
+    "authorizedUSA": true,
+    "authorizedCanada": false,
+    "authorizedUK": false,
+    "visaType": "F-1",
+    "workAuthType": "CPT",
+    "requiresSponsorshipNow": false,
+    "requiresSponsorshipFuture": false,
+    "sponsorshipAnswer": "I am currently authorized to work in the US on a CPT authorization under my F-1 visa. I do not require sponsorship at this time."
+  },
+
+  "resume": {
+    "filePath": "config/resume.pdf",
+    "version": "v1"
+  },
+
+  "skills": {
+    "languages": ["Python", "C#", "TypeScript", "JavaScript", "C", "C++", "SQL"],
+    "backendFrontend": ["FastAPI", "React", "Node.js", "Express", "NET Core", "REST APIs", "PostgreSQL", "MongoDB", "JWT"],
+    "aiml": ["OpenAI API", "RAG pipelines", "ChromaDB", "LangChain", "TensorFlow.js", "PyTorch", "embeddings"],
+    "toolsCloud": ["Docker", "AWS S3", "AWS EC2", "GitHub Actions", "CI/CD", "Git", "Linux", "Unix"]
+  },
+
+  "experience": [
+    {
+      "company": "Automox",
+      "title": "Software Engineering Intern (Backend)",
+      "location": "Remote",
+      "type": "Internship",
+      "startDate": "June 2025",
+      "endDate": "August 2025",
+      "bullets": [
+        "Implemented backend REST API endpoints supporting Automox's July 2025 Device Inventory rollout, automating device policy deployment and patch-remediation workflows — reducing manual configuration time by 40%.",
+        "Built a Python diagnostics utility adopted by backend engineers to automate log and system-state collection across 5+ components, cutting average production incident debugging time from 2 hours to 20 minutes.",
+        "Resolved 8+ OS-specific production edge cases during the Agent 1.x to 2.x platform migration by tracing API request flows, diagnosing PostgreSQL query bottlenecks, and validating fixes across cross-platform environments.",
+        "Shipped backend changes through CI/CD pipelines with 95%+ test coverage, maintaining regression-tested reliability across device inventory, policy enforcement, and patch automation workflows."
+      ]
+    },
+    {
+      "company": "University of South Florida",
+      "title": "C Programming Teaching Assistant (Unix/Linux)",
+      "location": "Tampa, FL",
+      "type": "Part-Time",
+      "startDate": "August 2025",
+      "endDate": "Present",
+      "bullets": [
+        "Debugged segmentation faults, memory leaks, and pointer errors across 100+ C codebases in Unix/Linux; performed structured code reviews that improved average submission scores by 15%.",
+        "Reviewed and validated submissions using Gradescope; identified correctness bugs, edge-case failures, and coding standard violations.",
+        "Coordinated a 4-person TA team to standardize grading criteria across 150+ student submissions; designed regrade review workflow adopted as the course-wide standard."
+      ]
+    },
+    {
+      "company": "University of South Florida",
+      "title": "Student Government Senator",
+      "location": "Tampa, FL",
+      "type": "Leadership",
+      "startDate": "August 2025",
+      "endDate": "Present",
+      "bullets": [
+        "Represent 50,000+ students in Student Government; recognized as Senator of the Month for leading committee initiatives and cross-campus senate meeting coordination."
+      ]
+    }
+  ],
+
+  "projects": [
+    {
+      "name": "EchoSoul — Persona Reasoning Engine",
+      "description": "An app where users hold real conversations with AI-modeled personas — the system builds a psychological model from source material capturing how each persona thinks, reacts, and decides.",
+      "techStack": ["Python", "FastAPI", "React", "TypeScript", "PostgreSQL", "ChromaDB", "OpenAI API", "ElevenLabs", "Docker"],
+      "highlights": "Engineered a RAG pipeline achieving 87% persona-consistency across 50 benchmark prompts.",
+      "link": ""
+    },
+    {
+      "name": "NeuralCloud — Browser ML Training Platform",
+      "description": "A browser-based ML training platform that runs without a separate ML environment, supporting CSV preprocessing, real-time training metrics, and model export.",
+      "techStack": ["React", "TensorFlow.js", "WebGPU", "Node.js", "PostgreSQL", "AWS S3", "Docker"],
+      "highlights": "Achieved 3.2x faster inference with WebGPU vs CPU baseline.",
+      "link": ""
+    },
+    {
+      "name": "Smart Home Inventory & Expiration Tracker",
+      "description": "A barcode-driven home inventory system that prevents food waste through expiration alerts, smart shopping lists, and consumption-rate forecasting.",
+      "techStack": ["C#", ".NET Core", "PostgreSQL", "Entity Framework Core", "Hangfire"],
+      "highlights": "Built REST API with 75%+ test coverage using xUnit.",
+      "link": ""
+    }
+  ],
+
+  "targetRoles": [
+    "Software Engineering Intern",
+    "Backend Software Engineering Intern",
+    "Full Stack Software Engineering Intern",
+    "AI/ML Engineering Intern"
+  ],
+
+  "demographic": {
+    "NOTE": "ORANGE FIELDS — bot never auto-fills these. Always paused for manual review.",
+    "birthday": "2006-04-05",
+    "gender": "Male",
+    "ethnicity": "South Asian",
+    "veteran": false,
+    "disability": false,
+    "lgbtq": false
+  }
+}
