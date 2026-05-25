@@ -2429,7 +2429,10 @@ async function verifyGraduationDropdowns(page) {
         // already the closest valid choice — don't churn the dropdown trying to "fix" it.
         const hasEarlier2027Option = optionTexts.some(t => /\b(jan|feb|mar|apr|may)\w*\s+2027\b/i.test(t) || /\bspring\s+2027\b/i.test(t));
         const isWrongDateValue = !isAlreadyMay2027 && (
-          /2025|2026/.test(svText) ||
+          // Only treat a 2025/2026 selection as wrong when this dropdown is actually
+          // a graduation / full-time-start question. Otherwise "Summer 2026 (May - August)"
+          // picked for an intern-season dropdown gets clobbered into May 2027.
+          (isDateContext && /2025|2026/.test(svText)) ||
           (hasMay2027Option && (isDateContext || monthYearCount >= 2)) ||
           (isDateContext && hasEarlier2027Option && /\b(jun|jul|aug|sep|oct|nov|dec|summer|fall|winter|autumn)\w*\s+20\d{2}\b/i.test(svText)) ||
           isPreGradFreeText
