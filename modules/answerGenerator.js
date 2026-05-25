@@ -1060,7 +1060,12 @@ async function generateSalaryAnswer(jobDescription, companyName, roleTitle) {
   if (extracted) return extracted;
 
   // No usable rate in the JD — return "negotiable" per the documented rule.
-  const hasSalaryRange = /\$\s*\d+|\d+\s*(k|K)\b|\d+\s*(\/hr|\/hour|per hour|per year|per annum)|salary|compensation range|pay range|hourly rate/i.test(jobDescription);
+  // Only fall through to the AI fallback when the JD actually posts a numeric amount.
+  // The bare words "salary"/"compensation"/"pay range"/"hourly rate" are not enough —
+  // they appear in JDs that merely *ask* for expectations without posting any number,
+  // and the AI then returns a sentence ("There is no salary mentioned…") instead of a value.
+  // Require an explicit dollar amount — words like "401(k)" or bare "salary" do not count.
+  const hasSalaryRange = /\$\s*\d{2,}/i.test(jobDescription);
   if (!hasSalaryRange) {
     return 'negotiable';
   }

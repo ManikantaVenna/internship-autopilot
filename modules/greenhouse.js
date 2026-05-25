@@ -1998,6 +1998,11 @@ function findBestOption(options, keywords) {
 // Static text answer for common known questions
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 function getStaticTextAnswer(labelLower, profile) {
+  // ── GitHub username/URL — Mani has no GitHub profile in his data. Fall back to
+  // his LinkedIn URL so a required field never gets a fabricated handle from the AI.
+  // (Mirrors the input-level GitHub fix; this branch covers textareas labelled "GitHub username".)
+  if (/\bgithub\b/i.test(labelLower)) return profile.personal.linkedin;
+
   // ── "How did you hear / Where did you first learn about this" — MUST run before any
   // referral pattern. These questions often include parenthetical referral language
   // ("If you were referred, please note an individual's name") which would otherwise
