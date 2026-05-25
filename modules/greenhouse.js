@@ -1577,10 +1577,32 @@ async function handleCheckboxQuestions(page, jobDescription) {
       try {
         const groupLabel = group.label || key;
 
-        // Skip "how did you hear about us" — static handler picks LinkedIn only.
-        // Check this BEFORE the consent skip so the log message is accurate.
+        // "How did you hear about us" rendered as a checkbox group — select the LinkedIn
+        // option directly. The static text handler can only fill text fields; for checkbox
+        // groups we have to physically tick the LinkedIn box, otherwise the required field
+        // is left empty (this bit us on app 19 / Aquatic Capital).
         if (STATIC_HANDLED_KEYWORDS.test(groupLabel)) {
-          console.log(`[INFO] Checkbox: skipping (handled by static LinkedIn handler) — "${groupLabel.substring(0, 60)}"`);
+          // Preference order for Mani: LinkedIn → Handshake (USF's career platform) →
+          // any other online/job-board source → "Other" as a last resort. Never tick
+          // "Employee referral" — that would imply a referrer who doesn't exist.
+          const opts = group.checkboxes;
+          let pick = opts.find(cb => /linked[\s-]?in/i.test(cb.optionLabel))
+                  || opts.find(cb => /handshake/i.test(cb.optionLabel))
+                  || opts.find(cb => /online|job\s*board|website|social/i.test(cb.optionLabel))
+                  || opts.find(cb => /\bother\b/i.test(cb.optionLabel));
+          if (pick) {
+            try {
+              const already = await pick.el.isChecked().catch(() => false);
+              if (!already) await pick.el.check({ force: true }).catch(async () => {
+                await pick.el.click({ force: true });
+              });
+              console.log(`[OK] Checkbox: "${groupLabel.substring(0, 40)}" -> "${pick.optionLabel}"`);
+            } catch (err) {
+              console.log(`[WARN]  Checkbox click failed for "how did you hear" group: ${err.message.split('\n')[0]}`);
+            }
+          } else {
+            console.log(`[WARN]  "how did you hear" checkbox group — no usable option among: ${opts.map(c => c.optionLabel).join(', ')}`);
+          }
           continue;
         }
 
