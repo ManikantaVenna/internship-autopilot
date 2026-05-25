@@ -693,12 +693,6 @@ async function handleCustomQuestions(page, jobDescription, company, roleTitle, p
       if (skipLabelPatterns.test(labelLower)) continue;
       if (/\b(date|birth|dob|ssn|social.?security)\b/i.test(labelLower)) continue;
 
-      // Skip sponsorship/visa questions — always handled as React-Select dropdowns
-      if (/require.*visa|visa.*require|require.*sponsor|sponsor.*visa|will you.*require|currently.*will you.*require|require.*employ.*author|employ.*author.*require/i.test(labelLower)) {
-        console.log(`[SKIP] Sponsorship/visa text input skipped (handled as dropdown): "${labelLower.substring(0, 40)}"`);
-        continue;
-      }
-
       // Fix 4: GitHub field handling
       if (/\bgithub\b/i.test(labelLower)) {
         const isGithubRequired = await input.evaluate(el => el.required || el.getAttribute('aria-required') === 'true').catch(() => false);
