@@ -1475,21 +1475,49 @@ async function finalRequiredAudit(page) {
       } catch {}
     }
 
-    // Required checkboxes
+    // Required checkboxes — group by name (a Greenhouse checkbox group is satisfied
+    // when any single option is checked, even though every option carries aria-required).
     const reqCbs = await page.$$('input[type="checkbox"][required], input[type="checkbox"][aria-required="true"]');
+    const cbGroups = new Map();
+    const cbSingles = [];
     for (const cb of reqCbs) {
       try {
         if (!await cb.isVisible().catch(() => false)) continue;
+        const name = await cb.getAttribute('name');
+        if (name) {
+          if (!cbGroups.has(name)) cbGroups.set(name, []);
+          cbGroups.get(name).push(cb);
+        } else {
+          cbSingles.push(cb);
+        }
+      } catch {}
+    }
+    for (const [name, group] of cbGroups) {
+      try {
+        let anyChecked = false;
+        for (const cb of group) { if (await cb.isChecked().catch(() => false)) { anyChecked = true; break; } }
+        // Group label: try fieldset legend / shared container text via first member
+        let groupLabel = (await getRadioGroupLabel(page, group[0]).catch(() => null))
+          || (await getFieldLabel(page, group[0]).catch(() => null))
+          || `(checkbox group ${name})`;
+        const labelShort = groupLabel.substring(0, 80);
+        if (group.length === 1) {
+          // Single required checkbox (consent/acknowledge) — must be ticked.
+          if (anyChecked) { console.log(`[AUDIT-OK] field filled: ${labelShort}`); okCount++; }
+          else { console.log(`[AUDIT-FAIL] empty required field: ${labelShort}`); failCount++; }
+        } else {
+          if (anyChecked) { console.log(`[AUDIT-OK] field filled: ${labelShort}`); okCount++; }
+          else { console.log(`[AUDIT-FAIL] empty required field: ${labelShort}`); failCount++; }
+        }
+      } catch {}
+    }
+    for (const cb of cbSingles) {
+      try {
         const isChecked = await cb.isChecked().catch(() => false);
         const label = await getFieldLabel(page, cb).catch(() => null) || '(unlabeled checkbox)';
         const labelShort = label.substring(0, 80);
-        if (isChecked) {
-          console.log(`[AUDIT-OK] field filled: ${labelShort}`);
-          okCount++;
-        } else {
-          console.log(`[AUDIT-FAIL] empty required field: ${labelShort}`);
-          failCount++;
-        }
+        if (isChecked) { console.log(`[AUDIT-OK] field filled: ${labelShort}`); okCount++; }
+        else { console.log(`[AUDIT-FAIL] empty required field: ${labelShort}`); failCount++; }
       } catch {}
     }
 
