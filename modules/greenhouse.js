@@ -151,6 +151,20 @@ async function applyGreenhouse(job) {
       console.log('[WARN] Embedded form handler failed â€" attempting standard Greenhouse flow...');
     }
 
+    // ── STEP 3.6: Application form presence check ──
+    // Stale Greenhouse URLs (job removed/expired) redirect to the company's job-board
+    // index page, which has no #first_name. Without this check, the bot wastes 60s on
+    // 3 selector timeouts and ends up "filling" the index's Department/Office filters
+    // as if they were form fields. Detect this early and bail with a clear reason.
+    const hasApplicationForm = await page.locator('#first_name').count() > 0;
+    if (!hasApplicationForm) {
+      console.log('[BLOCKED] No application form found on page (URL likely points to a removed/expired job).');
+      const screenshotPath = path.join(__dirname, `../logs/screenshots/${job.id}_${job.company}_error.png`);
+      await page.screenshot({ path: screenshotPath, fullPage: true }).catch(() => {});
+      await browser.close();
+      return { status: 'error', reason: 'job_not_found_or_removed', screenshotPath };
+    }
+
     // â"€â"€ STEP 4: Standard text fields â"€â"€
     console.log('[FILL]  Filling standard fields...');
     await safeFill(page, '#first_name', profile.personal.firstName, 'first_name');
