@@ -1,8 +1,29 @@
 // const Anthropic = require('@anthropic-ai/sdk'); // COMMENTED OUT — using Ollama instead
 // const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY }); // COMMENTED OUT
 require('dotenv').config();
+const fs = require('fs');
+const path = require('path');
 const Groq = require('groq-sdk');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
+
+// ─────────────────────────────────────────────
+// PROFILE FACTS — single source of truth for academic year.
+// SYSTEM_PROMPT, SHORT_PROMPT, and the dropdown prompt all read from here so
+// they can never drift out of sync with config/profile.json.
+// ─────────────────────────────────────────────
+const PROFILE = JSON.parse(fs.readFileSync(path.join(__dirname, '../config/profile.json'), 'utf8'));
+const CURRENT_YEAR = PROFILE.education.currentYear; // e.g. "Junior"
+const GRADUATION_DATE = PROFILE.education.graduationDate; // e.g. "May 2027"
+const UNIVERSITY = PROFILE.education.university;
+const MAJOR = PROFILE.education.major;
+const GPA = PROFILE.education.gpa;
+const START_MONTH = PROFILE.education.startMonth; // e.g. "August"
+
+const _ORDINAL_BY_YEAR = { freshman: 'first year', sophomore: 'second year', junior: 'third year', senior: 'fourth year' };
+const _NEXT_BY_YEAR    = { freshman: 'rising sophomore', sophomore: 'rising junior', junior: 'rising senior', senior: 'graduating senior' };
+const _yearKey = String(CURRENT_YEAR || '').toLowerCase();
+const CURRENT_YEAR_ORDINAL = _ORDINAL_BY_YEAR[_yearKey] || `${CURRENT_YEAR} year`;
+const RISING_NEXT_YEAR     = _NEXT_BY_YEAR[_yearKey]    || `rising ${CURRENT_YEAR}`;
 
 // Full 4-key fallback chain: Gemini-1 → Gemini-2 → Groq-1 → Groq-2.
 // Any error on a key moves to the next slot. All four exhausted = throw.
@@ -230,7 +251,7 @@ function buildSystemPromptWithJob(basePrompt, jobDescription) {
 // Edit this if you want to change how the AI writes.
 // ─────────────────────────────────────────────
 const SYSTEM_PROMPT = `
-You are writing on behalf of Mani (Manikanta Reddy Venna), a 20-year-old CS junior at the University of South Florida with a 4.0 GPA and real backend internship experience at Automox.
+You are writing on behalf of Mani (Manikanta Reddy Venna), a CS ${CURRENT_YEAR} at ${UNIVERSITY} with a ${GPA} GPA and real backend internship experience at Automox.
 
 Write in first person as Mani.
 
@@ -285,12 +306,12 @@ VISA AND WORK AUTHORIZATION:
 - Reason through sponsorship questions using this logic regardless of exact wording used
 
 YEAR IN SCHOOL:
-- Mani started university August 2023 and is graduating May 2027
-- He has completed three years and is currently a junior (third year)
-- Starting Fall 2026 he will be a rising senior — meaning he is entering his final year
-- If asked "are you a rising senior": answer Yes
-- If asked his current year: answer junior or third year
-- Do NOT say sophomore — he is a junior
+- Mani started university in ${START_MONTH} and is graduating ${GRADUATION_DATE}
+- He is currently a ${CURRENT_YEAR} (${CURRENT_YEAR_ORDINAL})
+- Heading into Fall, he will be a ${RISING_NEXT_YEAR}
+- If asked "are you a ${RISING_NEXT_YEAR}": answer Yes
+- If asked his current year: answer ${CURRENT_YEAR} or ${CURRENT_YEAR_ORDINAL}
+- His academic year is ${CURRENT_YEAR} — never say anything else
 
 INTERNSHIP EXPERIENCE:
 - Mani has completed a real internship: Software Engineering Intern at Automox, Summer 2025
@@ -1071,12 +1092,13 @@ async function generateShortAnswer(question, jobDescription, companyName, roleTi
   const SHORT_PROMPT = `You are filling out a job application form on behalf of Mani (Manikanta Reddy Venna).
 
 His details:
-- Full legal name: Manikanta Reddy Venna
-- University: University of South Florida
-- Major: Computer Science
-- GPA: 4.0
-- Graduation: May 2027
-- City: Tampa, FL
+- Full legal name: ${PROFILE.personal.firstName} ${PROFILE.personal.lastName}
+- University: ${UNIVERSITY}
+- Major: ${MAJOR}
+- GPA: ${GPA}
+- Graduation: ${GRADUATION_DATE}
+- Current academic year: ${CURRENT_YEAR}
+- City: ${PROFILE.personal.city}, ${PROFILE.personal.state}
 - Work authorization: F-1 CPT (authorized, no sponsorship needed)
 
 STRICT RULES — READ CAREFULLY:
@@ -1145,7 +1167,7 @@ async function generateDropdownAnswer(question, options, jobDescription, company
     if (latest) return latest;
   }
 
-  const prompt = `You are helping Mani (Manikanta Reddy Venna), a 20-year-old CS junior (third year, started August 2023, graduating May 2027) at the University of South Florida with a 4.0 GPA, an F-1 visa on CPT (does NOT need sponsorship), and backend internship experience at Automox, fill out an internship application at ${companyName} for a ${roleTitle} role.
+  const prompt = `You are helping Mani (Manikanta Reddy Venna), a CS ${CURRENT_YEAR} (${CURRENT_YEAR_ORDINAL}, graduating ${GRADUATION_DATE}) at ${UNIVERSITY} with a ${GPA} GPA, an F-1 visa on CPT (does NOT need sponsorship), and backend internship experience at Automox, fill out an internship application at ${companyName} for a ${roleTitle} role.
 
 DROPDOWN QUESTION: "${question}"
 
