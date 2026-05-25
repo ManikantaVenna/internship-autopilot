@@ -1134,11 +1134,11 @@ async function validateForm(page, jobDescription, company, roleTitle, profile) {
           el.required || el.getAttribute('aria-required') === 'true'
         ).catch(() => false);
         if (isRequired || label.includes('*')) {
-          console.log(`[WARN] MISSED REQUIRED: ${label}`);
+          console.log(`[WARN] skipped required field: ${label}`);
         } else {
           console.log(`[WARN] MISSED TEXTAREA: ${label}`);
         }
-        issues.push({ type: 'textarea', label, locator: ta });
+        issues.push({ type: 'textarea', label, locator: ta, isRequired: isRequired || label.includes('*') });
       } catch {}
     }
 
@@ -1177,8 +1177,8 @@ async function validateForm(page, jobDescription, company, roleTitle, profile) {
         const hasAsterisk = label.includes('*');
         const isQuestion = QUESTION_KEYWORDS.test(label);
         if (isRequired || hasAsterisk) {
-          console.log(`[WARN] MISSED REQUIRED: ${label}`);
-          issues.push({ type: 'input', label, locator: inp });
+          console.log(`[WARN] skipped required field: ${label}`);
+          issues.push({ type: 'input', label, locator: inp, isRequired: true });
         } else if (isQuestion) {
           console.log(`[WARN] MISSED QUESTION: ${label}`);
           issues.push({ type: 'input', label, locator: inp });
@@ -1198,9 +1198,16 @@ async function validateForm(page, jobDescription, company, roleTitle, profile) {
         if (!isDefault) continue;
         const handle = await sel.elementHandle().catch(() => null);
         const label = (handle ? await getFieldLabel(page, handle).catch(() => null) : null) || '(unknown dropdown)';
-        console.log(`[WARN] MISSED DROPDOWN: ${label}`);
+        const dropRequired = await sel.evaluate(el =>
+          el.required || el.getAttribute('aria-required') === 'true'
+        ).catch(() => false);
+        if (dropRequired || label.includes('*')) {
+          console.log(`[WARN] skipped required field: ${label}`);
+        } else {
+          console.log(`[WARN] MISSED DROPDOWN: ${label}`);
+        }
         dbgInternship('validateForm:missed-dropdown', label);
-        issues.push({ type: 'dropdown', label, locator: sel, handle });
+        issues.push({ type: 'dropdown', label, locator: sel, handle, isRequired: dropRequired || label.includes('*') });
       } catch {}
     }
 
@@ -1227,20 +1234,21 @@ async function validateForm(page, jobDescription, company, roleTitle, profile) {
         }).catch(() => '');
         if (HOW_DID_YOU_HEAR_PATTERN.test(groupText)) {
           if (/linkedin/i.test(label) && !hearGroupLinkedInFixed) {
-            console.log(`[WARN] MISSED CHECKBOX: ${label}`);
-            issues.push({ type: 'checkbox', label, el: cb });
+            console.log(`[WARN] skipped required field: ${label}`);
+            issues.push({ type: 'checkbox', label, el: cb, isRequired: true });
             hearGroupLinkedInFixed = true;
           }
           continue; // skip non-LinkedIn options in this group
         }
 
-        console.log(`[WARN] MISSED CHECKBOX: ${label}`);
-        issues.push({ type: 'checkbox', label, el: cb });
+        console.log(`[WARN] skipped required field: ${label}`);
+        issues.push({ type: 'checkbox', label, el: cb, isRequired: true });
       } catch {}
     }
 
     if (issues.length === 0) {
       console.log('[OK] VALIDATION PASSED â€" all fields filled');
+      await finalRequiredAudit(page);
       return;
     }
 
@@ -1343,8 +1351,158 @@ async function validateForm(page, jobDescription, company, roleTitle, profile) {
     } else {
       console.log(`[WARN] VALIDATION FOUND ${total} ISSUES â€" ${autoFixed} auto-fixed, ${stillNeedsReview} still need review`);
     }
+
+    await finalRequiredAudit(page);
   } catch (err) {
     console.log(`[WARN] validateForm error (continuing): ${err.message.split('\n')[0]}`);
+  }
+}
+
+// Final audit pass: log AUDIT-OK / AUDIT-FAIL for every visible required field
+// (run after all fill + auto-fix attempts, immediately before the screenshot)
+async function finalRequiredAudit(page) {
+  try {
+    console.log('\n[AUDIT] Final required-field audit:');
+    let okCount = 0;
+    let failCount = 0;
+
+    // Text inputs + textareas
+    const textEls = await page.$$('input[type="text"], input[type="email"], input[type="tel"], input[type="url"], input:not([type]), textarea');
+    for (const el of textEls) {
+      try {
+        const visible = await el.isVisible().catch(() => false);
+        if (!visible) continue;
+        const isRequired = await el.evaluate(n => n.required || n.getAttribute('aria-required') === 'true').catch(() => false);
+        let label = await getFieldLabel(page, el).catch(() => null) || '';
+        const hasAsterisk = label.includes('*');
+        if (!isRequired && !hasAsterisk) continue;
+        // Skip react-select internal search inputs (they aren't real text fields)
+        const isReactSelect = await el.evaluate(n => {
+          let node = n.parentElement;
+          for (let i = 0; i < 6; i++) {
+            if (!node) break;
+            const cls = (node.className && typeof node.className === 'string') ? node.className : '';
+            if (/select__control|react-select/.test(cls)) return true;
+            node = node.parentElement;
+          }
+          return false;
+        }).catch(() => false);
+        if (isReactSelect) continue;
+        const val = await el.evaluate(n => n.value || '').catch(() => '');
+        const labelShort = (label || '(unlabeled)').substring(0, 80);
+        if (val && val.trim()) {
+          console.log(`[AUDIT-OK] field filled: ${labelShort}`);
+          okCount++;
+        } else {
+          console.log(`[AUDIT-FAIL] empty required field: ${labelShort}`);
+          failCount++;
+        }
+      } catch {}
+    }
+
+    // Native selects
+    const selectEls = await page.$$('select');
+    for (const sel of selectEls) {
+      try {
+        const visible = await sel.isVisible().catch(() => false);
+        if (!visible) continue;
+        const isRequired = await sel.evaluate(n => n.required || n.getAttribute('aria-required') === 'true').catch(() => false);
+        const label = await getFieldLabel(page, sel).catch(() => null) || '';
+        const hasAsterisk = label.includes('*');
+        if (!isRequired && !hasAsterisk) continue;
+        const val = await sel.evaluate(n => n.value).catch(() => '');
+        const text = await sel.evaluate(n => (n.options[n.selectedIndex]?.text || '').trim()).catch(() => '');
+        const isDefault = !val || val === '0' || /^(select|please select)$/i.test(text);
+        const labelShort = (label || '(unlabeled select)').substring(0, 80);
+        if (!isDefault) {
+          console.log(`[AUDIT-OK] field filled: ${labelShort}`);
+          okCount++;
+        } else {
+          console.log(`[AUDIT-FAIL] empty required field: ${labelShort}`);
+          failCount++;
+        }
+      } catch {}
+    }
+
+    // React-select controls (visible single-value text)
+    const rsControls = await page.$$('[class*="select__control"]');
+    for (const ctrl of rsControls) {
+      try {
+        const visible = await ctrl.isVisible().catch(() => false);
+        if (!visible) continue;
+        const input = await ctrl.$('input');
+        if (!input) continue;
+        const isRequired = await input.evaluate(n => n.required || n.getAttribute('aria-required') === 'true').catch(() => false);
+        const label = await getFieldLabel(page, input).catch(() => null) || '';
+        const hasAsterisk = label.includes('*');
+        if (!isRequired && !hasAsterisk) continue;
+        const sv = await ctrl.$('[class*="select__single-value"]');
+        const svText = sv ? ((await sv.textContent()) || '').trim() : '';
+        const labelShort = (label || '(unlabeled dropdown)').substring(0, 80);
+        if (svText) {
+          console.log(`[AUDIT-OK] field filled: ${labelShort}`);
+          okCount++;
+        } else {
+          console.log(`[AUDIT-FAIL] empty required field: ${labelShort}`);
+          failCount++;
+        }
+      } catch {}
+    }
+
+    // Required radio groups
+    const allRadios = await page.$$('input[type="radio"]');
+    const radioGroups = new Map();
+    for (const r of allRadios) {
+      try {
+        if (!await r.isVisible().catch(() => false)) continue;
+        const name = await r.getAttribute('name');
+        if (!name) continue;
+        const isReq = await r.evaluate(n => n.required || n.getAttribute('aria-required') === 'true').catch(() => false);
+        if (!radioGroups.has(name)) radioGroups.set(name, { radios: [], required: false });
+        const g = radioGroups.get(name);
+        g.radios.push(r);
+        if (isReq) g.required = true;
+      } catch {}
+    }
+    for (const [, g] of radioGroups) {
+      if (!g.required) continue;
+      try {
+        let checked = false;
+        for (const r of g.radios) { if (await r.isChecked().catch(() => false)) { checked = true; break; } }
+        const label = await getRadioGroupLabel(page, g.radios[0]).catch(() => null) || '(unlabeled radio group)';
+        const labelShort = label.substring(0, 80);
+        if (checked) {
+          console.log(`[AUDIT-OK] field filled: ${labelShort}`);
+          okCount++;
+        } else {
+          console.log(`[AUDIT-FAIL] empty required field: ${labelShort}`);
+          failCount++;
+        }
+      } catch {}
+    }
+
+    // Required checkboxes
+    const reqCbs = await page.$$('input[type="checkbox"][required], input[type="checkbox"][aria-required="true"]');
+    for (const cb of reqCbs) {
+      try {
+        if (!await cb.isVisible().catch(() => false)) continue;
+        const isChecked = await cb.isChecked().catch(() => false);
+        const label = await getFieldLabel(page, cb).catch(() => null) || '(unlabeled checkbox)';
+        const labelShort = label.substring(0, 80);
+        if (isChecked) {
+          console.log(`[AUDIT-OK] field filled: ${labelShort}`);
+          okCount++;
+        } else {
+          console.log(`[AUDIT-FAIL] empty required field: ${labelShort}`);
+          failCount++;
+        }
+      } catch {}
+    }
+
+    console.log(`[AUDIT] Summary: ${okCount} ok, ${failCount} fail`);
+    if (failCount > 0) console.log('[AUDIT] needs_review');
+  } catch (err) {
+    console.log(`[WARN] finalRequiredAudit error (continuing): ${err.message.split('\n')[0]}`);
   }
 }
 
