@@ -1754,6 +1754,11 @@ function classifyDropdownAnswer(labelLower, options) {
   if (/completed any internships|have you done any internships|previous internship experience|have you completed.*internship|completed.*internship.*experience|prior internship/i.test(labelLower))
     return find(['yes', 'i have', 'yes i have', 'yes, i have']);
 
+  // Academic credit — Mani is F-1/CPT; USF does not require companies to provide course credit.
+  // Mirrors the rule in getStaticTextAnswer so dropdown forms answer consistently with text forms.
+  if (/require.*academic credit|school.*require.*credit|credit.*internship|academic.*credit.*required/i.test(labelLower))
+    return find(['no', 'no, my school does not', 'no it does not', 'not required']);
+
   // Bug 1 fix: "Have you been employed by / worked at / worked for [company]?" â€" always No
   if (/employed by|worked at|worked for|have you worked at|have you been employed/i.test(labelLower))
     return find(['no', 'no i have not', 'no, i have not', 'i have not', 'never']);
@@ -2581,6 +2586,10 @@ async function typeHumanLike(page, element, text) {
 }
 
 function waitForEnter() {
+  if (process.argv.includes('--no-pause')) {
+    console.log('[NO-PAUSE] --no-pause flag set, skipping review pause.');
+    return Promise.resolve();
+  }
   return new Promise((resolve) => {
     const readline = require('readline');
     const rl = readline.createInterface({ input: process.stdin, output: process.stdout });

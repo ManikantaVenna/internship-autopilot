@@ -37,13 +37,25 @@ async function main() {
 
   let jobs = readJobs();
 
-  // Only process jobs with status "pending"
-  const pendingJobs = jobs.filter(job => job.status === 'pending');
-  console.log(`📋 Found ${pendingJobs.length} pending jobs to process.\n`);
+  // --id <N> runs a single job by CSV id, regardless of status.
+  const idFlagIdx = process.argv.indexOf('--id');
+  const targetId = idFlagIdx !== -1 ? process.argv[idFlagIdx + 1] : null;
 
-  if (pendingJobs.length === 0) {
-    console.log('No pending jobs found. Add jobs to data/jobs.csv with status=pending.');
-    return;
+  let pendingJobs;
+  if (targetId) {
+    pendingJobs = jobs.filter(job => String(job.id) === String(targetId));
+    if (pendingJobs.length === 0) {
+      console.log(`No job found with id=${targetId} in data/jobs.csv.`);
+      return;
+    }
+    console.log(`🎯 Running single job id=${targetId}: ${pendingJobs[0].company} — ${pendingJobs[0].role_title}\n`);
+  } else {
+    pendingJobs = jobs.filter(job => job.status === 'pending');
+    console.log(`📋 Found ${pendingJobs.length} pending jobs to process.\n`);
+    if (pendingJobs.length === 0) {
+      console.log('No pending jobs found. Add jobs to data/jobs.csv with status=pending.');
+      return;
+    }
   }
 
   for (const job of pendingJobs) {
@@ -75,16 +87,21 @@ async function main() {
       result = { status: 'skipped', reason: 'unknown_platform' };
     }
 
-    // Update the job row with results
-    const jobIndex = jobs.findIndex(j => j.id === job.id);
-    jobs[jobIndex].status = result.status || 'error';
-    jobs[jobIndex].error_reason = result.reason || '';
-    jobs[jobIndex].screenshot_path = result.screenshotPath || '';
-    jobs[jobIndex].date_applied = result.status === 'applied' ? new Date().toISOString().split('T')[0] : '';
+    // --id is for testing/auditing — never mutate the CSV row.
+    if (targetId) {
+      console.log(`🧪 --id mode: leaving jobs.csv row ${job.id} untouched (result: ${result.status}).`);
+    } else {
+      // Update the job row with results
+      const jobIndex = jobs.findIndex(j => j.id === job.id);
+      jobs[jobIndex].status = result.status || 'error';
+      jobs[jobIndex].error_reason = result.reason || '';
+      jobs[jobIndex].screenshot_path = result.screenshotPath || '';
+      jobs[jobIndex].date_applied = result.status === 'applied' ? new Date().toISOString().split('T')[0] : '';
 
-    // Save after every single job — never lose progress
-    saveJobs(jobs);
-    console.log(`💾 Saved status: ${jobs[jobIndex].status}`);
+      // Save after every single job — never lose progress
+      saveJobs(jobs);
+      console.log(`💾 Saved status: ${jobs[jobIndex].status}`);
+    }
 
     // Small pause between applications
     await new Promise(r => setTimeout(r, 3000));
