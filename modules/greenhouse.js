@@ -236,18 +236,9 @@ async function applyGreenhouse(job) {
     }
 
     // â"€â"€ STEP 7: Standard demographic fields â"€â"€
-    const hasDemographics = await page.locator('#gender').count() > 0;
-    if (hasDemographics) {
-      console.log('[DEMOGRAPHICS] Filling demographic fields...');
-      await fillReactSelect(page, 'gender', 'Male', 'Male');
-      await fillReactSelect(page, 'hispanic_ethnicity', 'No', 'No');
-      await page.waitForSelector('#race', { state: 'attached', timeout: 5000 }).catch(() => {});
-      await fillReactSelect(page, 'race', 'Asian', 'Asian');
-      await fillReactSelect(page, 'veteran_status', 'not a protected', 'I am not a protected veteran');
-      await fillReactSelect(page, 'disability_status', 'do not have', 'No, I do not have a disability');
-    } else {
-      console.log('[INFO]  No standard demographic section â€" skipping');
-    }
+    // Label-driven: works on any Greenhouse form regardless of input id naming
+    // (DoubleVerify, for example, does not use the standard #hispanic_ethnicity / #race ids).
+    await fillDemographicsByLabel(page);
 
     // â"€â"€ STEP 8: All native <select> dropdowns â"€â"€
     console.log('[DROPDOWN] Filling native select dropdowns...');
@@ -2541,6 +2532,120 @@ async function fillReactSelectReturningSuccess(page, inputId, searchText, option
 }
 
 // Fix 11: fill a React-Select by searching for its label text
+// Fill Greenhouse demographic dropdowns by matching field LABEL rather than
+// hard-coded input ids. Greenhouse forms differ — DoubleVerify, for example,
+// uses ids like #hispanic_ethnicity_4012345 instead of plain #hispanic_ethnicity,
+// which silently breaks id-based fills. This scans every react-select control
+// once, classifies it by label, and picks the best-matching option from the
+// menu's actual contents (no typeahead filter — the menu lists every option
+// when opened with an empty input, so we just click the right one).
+async function fillDemographicsByLabel(page) {
+  const CATEGORIES = [
+    { key: 'gender', labelRe: /gender/i, rejectRe: /transgender/i,
+      candidates: ['Male', 'Man', 'M'] },
+    { key: 'hispanic_ethnicity', labelRe: /hispanic|latino|latinx/i,
+      candidates: ['Not Hispanic or Latino', 'No, not Hispanic or Latino', 'No, I am not Hispanic or Latino',
+                   'No', 'Not Hispanic', 'Not Latino', 'I am not Hispanic', 'I am not Latino'] },
+    { key: 'race', labelRe: /\brace\b|ethnicity|racial|ethnic background/i, rejectRe: /hispanic|latino/i,
+      candidates: ['Asian', 'South Asian', 'Asian / South Asian', 'Asian (Not Hispanic or Latino)'] },
+    { key: 'veteran_status', labelRe: /veteran/i,
+      candidates: ['I am not a protected veteran', 'Not a protected veteran', 'I am NOT a protected veteran', 'No'] },
+    { key: 'disability_status', labelRe: /disability|disabled/i,
+      candidates: ['No, I do not have a disability', 'No, I don’t have a disability',
+                   'No, I don’t have a disability and have not had one in the past',
+                   'No', 'I do not have a disability'] },
+  ];
+
+  console.log('[DEMOGRAPHICS] Filling demographic fields...');
+  // Greenhouse sometimes mounts the demographic block lazily as the user scrolls. Force a
+  // top-to-bottom-and-back scroll so React mounts every select__control before we scan.
+  try {
+    await page.evaluate(async () => {
+      window.scrollTo(0, document.body.scrollHeight);
+      await new Promise(r => setTimeout(r, 400));
+      window.scrollTo(0, 0);
+    });
+  } catch {}
+  await page.waitForTimeout(600);
+
+
+  let filled = 0;
+  let absent = 0;
+  for (const cat of CATEGORIES) {
+    const status = await fillOneDemographic(page, cat).catch(() => 'absent');
+    if (status === 'filled' || status === 'already') filled++;
+    else if (status === 'absent') absent++;
+  }
+  if (filled === 0 && absent === CATEGORIES.length) {
+    console.log('[INFO]  No standard demographic section â€" skipping');
+  }
+}
+
+// Try to fill one demographic category. Re-queries select__control elements fresh each
+// invocation (React may re-render between fills) and retries once with a longer wait
+// in case the section was still mounting.
+async function fillOneDemographic(page, cat) {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    if (attempt === 1) await page.waitForTimeout(800);
+    const controls = await page.$$('[class*="select__control"]');
+    for (const control of controls) {
+      try {
+        if (!await control.isVisible().catch(() => false)) continue;
+        const input = await control.$('input');
+        if (!input) continue;
+        const label = await getLabelForElement(page, input).catch(() => null);
+        if (!label) continue;
+        if (!cat.labelRe.test(label)) continue;
+        if (cat.rejectRe && cat.rejectRe.test(label)) continue;
+
+        const inputId = await input.getAttribute('id').catch(() => null);
+        // Skip already-filled controls
+        const sv = await control.$('[class*="select__single-value"]');
+        if (sv && (await sv.textContent() || '').trim()) {
+          if (inputId) HANDLED_IDS.add(inputId);
+          return 'already';
+        }
+
+        await control.scrollIntoViewIfNeeded().catch(() => {});
+        await control.click({ force: true });
+        await page.waitForTimeout(400);
+        const menu = page.locator('[class*="select__menu"]');
+        await menu.waitFor({ state: 'visible', timeout: 4000 }).catch(() => {});
+        const optionEls = await page.$$('[class*="select__option"]');
+        const optionTexts = [];
+        for (const el of optionEls) {
+          optionTexts.push(((await el.textContent().catch(() => '')) || '').trim());
+        }
+
+        // Prefer exact match over substring so "No" doesn't grab "Not interested".
+        let picked = null;
+        for (const cand of cat.candidates) {
+          const i = optionTexts.findIndex(t => t.toLowerCase() === cand.toLowerCase());
+          if (i >= 0) { picked = { text: optionTexts[i], el: optionEls[i] }; break; }
+        }
+        if (!picked) {
+          for (const cand of cat.candidates) {
+            const i = optionTexts.findIndex(t => t.toLowerCase().includes(cand.toLowerCase()));
+            if (i >= 0) { picked = { text: optionTexts[i], el: optionEls[i] }; break; }
+          }
+        }
+
+        if (picked) {
+          await picked.el.click().catch(() => {});
+          await page.waitForTimeout(200);
+          console.log(`[OK] React-Select: "${label.substring(0, 50)}" -> "${picked.text}"`);
+          if (inputId) HANDLED_IDS.add(inputId);
+          return 'filled';
+        }
+        await page.keyboard.press('Escape').catch(() => {});
+        console.log(`[WARN] Demographic option not matched for "${label.substring(0, 50)}" (options: ${optionTexts.slice(0, 5).join(' | ')})`);
+        return 'unmatched';
+      } catch {}
+    }
+  }
+  return 'absent';
+}
+
 async function fillReactSelectByLabel(page, labelPattern, searchText, optionText) {
   optionText = optionText || searchText;
   try {

@@ -1,0 +1,10 @@
+# audit_summary.txt
+# One line per terminal log in logs/run_logs/. Future checkpoint runs can read this
+# file instead of parsing every full log. Append a new line per run.
+# Format: <filename> | app=<id> | <company> | audit=<N ok, M fail> | warns=<count> | demographics=<filled|absent|partial>
+audit_20.txt           | app=20 | DoubleVerify              | audit=11 ok, 1 fail | warns=2 | demographics=absent  | note: pre-fix run — Hispanic/race/etc skipped because id-based handler missed DV's id suffix; sponsorship text-input also failed (AUDIT-FAIL)
+audit_20_v2.txt        | app=20 | DoubleVerify              | audit=12 ok, 0 fail | warns=2 | demographics=partial | note: mid-fix run — label-based scanner caught veteran/disability + race but missed gender/hispanic due to timing race
+audit_20_fixed.txt     | app=20 | DoubleVerify              | audit=12 ok, 0 fail | warns=2 | demographics=filled  | note: final fix — per-category scan with scroll-prime + retry now hits all 5 demographic dropdowns
+smoke_6.txt            | app=6  | Cloudflare                | audit=14 ok, 0 fail | warns=0 | demographics=filled  | note: standard Greenhouse form, all demographic dropdowns filled
+smoke_9.txt            | app=9  | Dorsia                    | audit=14 ok, 0 fail | warns=1 | demographics=absent  | note: form has no demographic section; remaining warn is a benign React-Select-not-found for #start-month--0
+checkpoint_19.txt      | app=19 | Aquatic Capital Management| audit=21 ok, 0 fail | warns=2 | demographics=absent  | note: form has no demographic section; warns are React-Select-not-found for month fields
