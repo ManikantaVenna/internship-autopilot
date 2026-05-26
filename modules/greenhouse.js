@@ -2330,8 +2330,6 @@ function getStaticTextAnswer(labelLower, profile) {
       !/sponsor|require an employ|visa|immigration|will you|work auth/i.test(labelLower)) return 'University of South Florida';
   if (/current.*(title|position|role)|most.?recent.*(title|position|role)/i.test(labelLower) && !/relocat/i.test(labelLower)) return 'C Programming Teaching Assistant';
 
-  if (/authorized.*(work|employ)|legally authorized|work.*lawful/i.test(labelLower)) return _currentRoleIsNonUS ? 'No' : 'Yes';
-  if (/sponsor|immigration case|require.*visa/i.test(labelLower) && !/authorized to work/i.test(labelLower)) return _currentRoleIsNonUS ? 'Yes' : 'No';
   if (/\bcity\b(?!.*state)/i.test(labelLower)) return profile.personal.city;
   if (/\bstate\b(?!.*united)/i.test(labelLower)) return profile.personal.state;
   if (/\bzip\b|\bpostal\b/i.test(labelLower)) return profile.personal.zip;
