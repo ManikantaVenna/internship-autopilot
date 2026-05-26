@@ -1208,10 +1208,24 @@ async function validateForm(page, jobDescription, company, roleTitle, profile) {
     const HOW_DID_YOU_HEAR_PATTERN = /how did you (hear|find|learn|discover)|source of referral|hear about (this|the|our)/i;
     let hearGroupLinkedInFixed = false;
     const requiredCheckboxes = await page.$$('input[type="checkbox"][required]');
+    // Greenhouse marks every checkbox in a required group as required individually. A group
+    // (same `name` attribute) is considered satisfied when at least one of its boxes is
+    // checked — flagging the other options as "skipped required" produces false-positive
+    // warns and triggers an auto-fix that ticks irrelevant choices. Pre-compute satisfied
+    // group names so we can skip those sibling boxes.
+    const satisfiedCheckboxGroups = new Set();
+    for (const cb of requiredCheckboxes) {
+      try {
+        const name = await cb.getAttribute('name');
+        if (name && await cb.isChecked()) satisfiedCheckboxGroups.add(name);
+      } catch {}
+    }
     for (const cb of requiredCheckboxes) {
       try {
         if (!await cb.isVisible()) continue;
         if (await cb.isChecked()) continue;
+        const name = await cb.getAttribute('name');
+        if (name && satisfiedCheckboxGroups.has(name)) continue; // sibling already ticked
         const label = await getFieldLabel(page, cb).catch(() => null) || '(unknown checkbox)';
 
         // Fix 10: for "how did you hear" checkbox groups, only flag/fix LinkedIn
@@ -1431,8 +1445,11 @@ async function finalRequiredAudit(page) {
         if (!isRequired && !hasAsterisk) continue;
         const sv = await ctrl.$('[class*="select__single-value"]');
         const svText = sv ? ((await sv.textContent()) || '').trim() : '';
+        // Multi-select react-selects expose each chosen value as a select__multi-value pill
+        // instead of a single-value text. Count those as filled when at least one is present.
+        const mv = await ctrl.$('[class*="select__multi-value"]');
         const labelShort = (label || '(unlabeled dropdown)').substring(0, 80);
-        if (svText) {
+        if (svText || mv) {
           console.log(`[AUDIT-OK] field filled: ${labelShort}`);
           okCount++;
         } else {
@@ -2176,8 +2193,18 @@ function classifyDropdownAnswer(labelLower, options) {
     return find(['40', '40 hours', 'full-time', 'full time', '40 hours per week', '35-40', '37.5', '30-40']);
 
   // Student status / academic year
-  if (/current.*academic.*status|rising|junior|senior|sophomore/i.test(labelLower))
-    return find(['rising senior', 'junior', 'rising junior', 'sophomore', 'third year', 'senior']);
+  if (/current.*academic.*status|rising|junior|senior|sophomore/i.test(labelLower)) {
+    // Try undergraduate matches first (Mani is a CS Junior, Bachelor's in progress).
+    const undergrad = find(['rising senior', 'junior', 'rising junior', 'sophomore', 'third year', 'senior', 'undergraduate', "bachelor's", 'bachelor', 'undergrad', 'bachelors student']);
+    if (undergrad) return undergrad;
+    // None of the options describe an undergraduate — the form is offered to grad students.
+    // Picking "Master's student" or "PhD" would falsely claim a degree Mani does not have,
+    // so fall back to "Other" / "Prefer not to say" when present; otherwise return null and
+    // let the audit flag this for manual review rather than letting the model invent.
+    const honest = find(['other', 'none of the above', 'prefer not to say']);
+    if (honest) return honest;
+    return null;
+  }
 
   if (_isIntern) console.log(`[DEBUG-INTERNSHIP] classifyDropdownAnswer:fell-through-to-null | label="${labelLower}"`);
   return null; // Unknown — caller uses Claude API
