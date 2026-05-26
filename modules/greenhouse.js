@@ -228,10 +228,14 @@ async function applyGreenhouse(job) {
       }
     } catch {}
 
-    // Country React-Select (present on most modern Greenhouse forms; required when present)
+    // Country React-Select (present on most modern Greenhouse forms; required when present).
+    // Only run when #country is actually wrapped in a react-select container — some
+    // Greenhouse boards (DoubleVerify) still render Country as a plain text input, and
+    // attempting fillReactSelect there clicks the input then opens phantom menus that can
+    // disturb adjacent fields.
     try {
-      const countryCount = await page.locator('#country').count();
-      if (countryCount > 0) {
+      const countryInRS = await page.locator('[class*="select__control"]:has(#country)').count();
+      if (countryInRS > 0) {
         await fillReactSelect(page, 'country', 'United States', 'United States');
       }
     } catch {}
@@ -726,7 +730,10 @@ async function handleCustomQuestions(page, jobDescription, company, roleTitle, p
       const labelLower = cleanLabel(label);
 
       if (skipLabelPatterns.test(labelLower)) continue;
-      if (/\b(date|birth|dob|ssn|social.?security)\b/i.test(labelLower)) continue;
+      // Skip personally-sensitive fields the bot must NEVER auto-fill (birthdate, SSN).
+      // A bare "date" used to be in this list, which incorrectly skipped legitimate
+      // questions like "expected graduation date" or "start date".
+      if (/\b(birth|birthday|dob|date of birth|ssn|social.?security)\b/i.test(labelLower)) continue;
 
       // Fix 4: GitHub field handling
       if (/\bgithub\b/i.test(labelLower)) {
