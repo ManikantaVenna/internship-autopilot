@@ -67,6 +67,23 @@ async function readCharLimit(locator) {
   }).catch(() => null);
 }
 
+// Per-application context. Set at the start of applyGreenhouse from the job
+// description; read by classifyDropdownAnswer so sponsorship questions answer
+// honestly when the role is hosted outside the US (Mani has F-1 CPT for US
+// roles but is NOT authorized to work in Canada, Romania, etc. — those roles
+// genuinely require future sponsorship).
+let _currentRoleIsNonUS = false;
+const NON_US_COUNTRIES = /\b(romania|canada|united kingdom|\bu\.?k\.?\b|germany|france|spain|netherlands|ireland|sweden|switzerland|australia|singapore|japan|india|brazil|mexico|israel)\b/i;
+function detectNonUsRoleFromJD(jobDescription) {
+  if (!jobDescription) return false;
+  const head = jobDescription.substring(0, 1500);
+  if (!NON_US_COUNTRIES.test(head)) return false;
+  // If the JD also clearly names a US location near the top, treat as US role.
+  if (/\b(remote.*us|united states|usa|new york|san francisco|raleigh|boston|seattle|austin|chicago|tampa|los angeles|atlanta)\b/i.test(head)
+      && !NON_US_COUNTRIES.test(head.substring(0, 200))) return false;
+  return true;
+}
+
 // IDs already handled by specific fills â€" general handlers skip these
 const HANDLED_IDS = new Set([
   'school--0', 'degree--0', 'discipline--0', 'end-month--0', 'end-year--0', 'start-year--0',
@@ -128,6 +145,25 @@ async function applyGreenhouse(job) {
     } catch {
       jobDescription = `${job.role_title} at ${job.company}`;
     }
+    // Scrape job location separately — Greenhouse renders it in a sibling header outside
+    // of the description block, so it doesn't appear in the JD scrape above.
+    let jobLocation = '';
+    try {
+      for (const sel of ['.job__location', '[class*="job-location"]', '.location', '[data-location]', '.app-title + div', '.job-header']) {
+        const el = await page.$(sel).catch(() => null);
+        if (el) {
+          const t = ((await el.textContent()) || '').trim();
+          if (t && t.length < 200) { jobLocation = t; break; }
+        }
+      }
+      if (!jobLocation) {
+        // Fallback: pull from the top of the visible body text
+        const bodyText = ((await page.textContent('body')) || '').trim();
+        jobLocation = bodyText.split('\n').slice(0, 5).join(' | ').substring(0, 200);
+      }
+    } catch {}
+    _currentRoleIsNonUS = detectNonUsRoleFromJD(`${jobLocation}\n${jobDescription}`);
+    if (_currentRoleIsNonUS) console.log(`[INFO] Detected non-US role location ("${jobLocation.substring(0, 80)}") — sponsorship answers will reflect that Mani is not authorized there.`);
 
     // â"€â"€ STEP 3.5: Embedded iframe form detection â"€â"€
     // Company career pages (e.g. careers.formlabs.com) sometimes embed the Greenhouse
@@ -1996,17 +2032,24 @@ function classifyDropdownAnswer(labelLower, options) {
     return find(['no', 'no i have not', 'no, i have not', 'i have not', 'never']);
 
   // Fix 3: "legally eligible to work" — explicit check fires before generic pattern
-  if (/legally eligible to work/i.test(labelLower))
+  if (/legally eligible to work/i.test(labelLower)) {
+    if (_currentRoleIsNonUS) return find(['no', 'not currently', 'no, not currently', 'i am not']);
     return find(['yes', 'authorized', 'eligible', 'i am authorized', 'yes, i am']);
+  }
 
   // Work authorization
-  if (/authorized.*(work|employ)|legally authorized|work.*lawfully|eligible.*work/i.test(labelLower))
+  if (/authorized.*(work|employ)|legally authorized|work.*lawfully|eligible.*work/i.test(labelLower)) {
+    if (_currentRoleIsNonUS) return find(['no', 'not currently', 'no, not currently', 'i am not']);
     return find(['yes', 'authorized', 'eligible', 'i am authorized', 'yes, i am']);
+  }
 
-  // Sponsorship (but NOT "authorized to work" â€" those are separate)
+  // Sponsorship (but NOT "authorized to work" â€" those are separate). Non-US roles need
+  // sponsorship since Mani's F-1/CPT only covers US employment.
   if (/sponsor|h-1b|h1b|require.*visa|visa.*require|immigration case/i.test(labelLower) &&
-      !/authorized to work/i.test(labelLower))
+      !/authorized to work/i.test(labelLower)) {
+    if (_currentRoleIsNonUS) return find(['yes', 'i will', 'will require', 'will need', 'yes, i will']);
     return find(['no', 'will not', "won't", 'not require', 'i will not', 'no, i will not']);
+  }
 
   // Fix 7: Sexual orientation — prefer Heterosexual/Straight over "I don't wish to answer"
   if (/sexual orientation|sexual preference/i.test(labelLower)) {
@@ -2239,9 +2282,9 @@ function getStaticTextAnswer(labelLower, profile) {
 
   // ── Sponsorship / work-auth — ABSOLUTE FIRST, before any pattern can false-positive ──
   // "require an employ" catches both "require an employer" and "require an employment authorization"
-  if (/require an employ|currently.*will you|will you.*future.*require|currently or will you|require.*visa|visa.*require|require.*sponsor|sponsor.*require/i.test(labelLower)) return 'No';
-  if (/\bsponsor\b/i.test(labelLower) && !/authorized to work|legally authorized/i.test(labelLower)) return 'No';
-  if (/authorized to work|legally authorized|work.*lawfully/i.test(labelLower)) return 'Yes';
+  if (/require an employ|currently.*will you|will you.*future.*require|currently or will you|require.*visa|visa.*require|require.*sponsor|sponsor.*require/i.test(labelLower)) return _currentRoleIsNonUS ? 'Yes' : 'No';
+  if (/\bsponsor\b/i.test(labelLower) && !/authorized to work|legally authorized/i.test(labelLower)) return _currentRoleIsNonUS ? 'Yes' : 'No';
+  if (/authorized to work|legally authorized|work.*lawfully/i.test(labelLower)) return _currentRoleIsNonUS ? 'No' : 'Yes';
 
   // ── Voluntary self-id / demographic — checked FIRST to prevent wrong pattern matches ──
   if (/\bdisabilit|chronic condition/i.test(labelLower) && !/accommodation|history|prior|past/i.test(labelLower)) return 'No';
@@ -2280,8 +2323,8 @@ function getStaticTextAnswer(labelLower, profile) {
       !/sponsor|require an employ|visa|immigration|will you|work auth/i.test(labelLower)) return 'University of South Florida';
   if (/current.*(title|position|role)|most.?recent.*(title|position|role)/i.test(labelLower) && !/relocat/i.test(labelLower)) return 'C Programming Teaching Assistant';
 
-  if (/authorized.*(work|employ)|legally authorized|work.*lawful/i.test(labelLower)) return 'Yes';
-  if (/sponsor|immigration case|require.*visa/i.test(labelLower) && !/authorized to work/i.test(labelLower)) return 'No';
+  if (/authorized.*(work|employ)|legally authorized|work.*lawful/i.test(labelLower)) return _currentRoleIsNonUS ? 'No' : 'Yes';
+  if (/sponsor|immigration case|require.*visa/i.test(labelLower) && !/authorized to work/i.test(labelLower)) return _currentRoleIsNonUS ? 'Yes' : 'No';
   if (/\bcity\b(?!.*state)/i.test(labelLower)) return profile.personal.city;
   if (/\bstate\b(?!.*united)/i.test(labelLower)) return profile.personal.state;
   if (/\bzip\b|\bpostal\b/i.test(labelLower)) return profile.personal.zip;
