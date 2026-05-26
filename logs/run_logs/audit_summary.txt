@@ -10,3 +10,4 @@ smoke_9.txt            | app=9  | Dorsia                    | audit=14 ok, 0 fai
 checkpoint_19.txt      | app=19 | Aquatic Capital Management| audit=21 ok, 0 fail | warns=2 | demographics=absent  | note: form has no demographic section; warns are React-Select-not-found for month fields
 app_26 | company: Verkada | problem_types: country_react_select_missed | fixes: added_explicit_country_react_select_fill + added_country_to_HANDLED_IDS | status: clean
 app_27 | company: Axiomatic AI | problem_types: multi_select_audit_blind, false_skipped_warn_for_checkbox_group, academic_status_classifier_misfire | fixes: audit detects multi-value pills, validator skips already-satisfied checkbox group siblings, academic-status classifier covers undergrad + falls back to Other | status: clean
+app_28 | company: Constant Contact | problem_types: none | fixes: none | status: clean
