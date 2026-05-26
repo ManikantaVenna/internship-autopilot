@@ -154,22 +154,26 @@ async function tryGroq(client, systemPrompt, userMessage, maxTokens) {
 // ─────────────────────────────────────────────
 // 4-KEY FALLBACK CHAIN — every AI call in this file goes through here.
 // Order: Gemini-1 → Gemini-2 → Groq-1 → Groq-2. Any error advances the chain.
+// When all 4 fail, wait 60s and retry Gemini-1 once. If that also fails, throw
+// a QuotaExhausted error — callers may catch and skip the field rather than crash.
 // ─────────────────────────────────────────────
-async function callChain(systemPrompt, userMessage, maxTokens = 1000) {
+class QuotaExhaustedError extends Error {
+  constructor() {
+    super('quota exhausted');
+    this.code = 'QUOTA_EXHAUSTED';
+  }
+}
+
+async function _tryAllKeysOnce(systemPrompt, userMessage, maxTokens) {
   for (let i = 0; i < GEMINI_KEYS.length; i++) {
     const { label, client } = GEMINI_KEYS[i];
     try {
       const out = await tryGemini(client, systemPrompt, userMessage, maxTokens);
       console.log(`[${label}] responded`);
-      return out;
+      return { ok: true, out };
     } catch (err) {
       const msg = (err.message || '').split('\n')[0];
-      const isLastGemini = i === GEMINI_KEYS.length - 1;
-      if (!isLastGemini) {
-        console.log(`[${label}] failed — trying Gemini key 2: ${msg}`);
-      } else {
-        console.log(`[${label}] failed — falling back to Groq: ${msg}`);
-      }
+      console.log(`[${label}] failed: ${msg}`);
     }
   }
   for (let i = 0; i < GROQ_KEYS.length; i++) {
@@ -177,18 +181,34 @@ async function callChain(systemPrompt, userMessage, maxTokens = 1000) {
     try {
       const out = await tryGroq(client, systemPrompt, userMessage, maxTokens);
       console.log(`[${label}] responded`);
+      return { ok: true, out };
+    } catch (err) {
+      const msg = (err.message || '').split('\n')[0];
+      console.log(`[${label}] failed: ${msg}`);
+    }
+  }
+  return { ok: false };
+}
+
+async function callChain(systemPrompt, userMessage, maxTokens = 1000) {
+  const first = await _tryAllKeysOnce(systemPrompt, userMessage, maxTokens);
+  if (first.ok) return first.out;
+
+  console.log('[QUOTA-RETRY] all keys failed, waiting 60s before one retry');
+  await new Promise(r => setTimeout(r, 60000));
+  if (GEMINI_KEYS.length > 0) {
+    try {
+      const { label, client } = GEMINI_KEYS[0];
+      const out = await tryGemini(client, systemPrompt, userMessage, maxTokens);
+      console.log(`[${label}] responded (post-retry)`);
       return out;
     } catch (err) {
       const msg = (err.message || '').split('\n')[0];
-      const isLastGroq = i === GROQ_KEYS.length - 1;
-      if (!isLastGroq) {
-        console.log(`[${label}] failed — trying Groq key 2: ${msg}`);
-      } else {
-        console.log(`[${label}] failed: ${msg}`);
-      }
+      console.log(`[GEMINI-1] retry failed: ${msg}`);
     }
   }
-  throw new Error('All 4 API keys exhausted (Gemini-1, Gemini-2, Groq-1, Groq-2)');
+  console.log('[QUOTA-EXHAUSTED] confirmed daily limit reached');
+  throw new QuotaExhaustedError();
 }
 
 // Public names preserved for existing callers — all route through the chain.
@@ -1002,13 +1022,121 @@ Write Mani's answer to this question. Use specific details from the job descript
 }
 
 // ─────────────────────────────────────────────
-// SECTION 3 — SALARY FUNCTION
+// SECTION 3 — SALARY FUNCTION (rewritten — see spec block at end of function)
 // ─────────────────────────────────────────────
-// Deterministically pull hourly pay numbers from the job description.
-// Returns the picked number as a plain string (no $ sign) or null if nothing is found.
-// Avoids the AI entirely for the common case: a single rate ($27/hr) or an explicit
-// range ($30-$40 per hour). This stops the model from confusing "40 hours per week"
-// with the actual pay rate.
+const NON_USD_TOKENS = /(romania|\blei\b|\bron\b|\bindia\b|\binr\b|rupee|mexico|\bmxn\b|peso|brazil|\bbrl\b|€|£|¥|₹|₱|₩)/i;
+
+function detectSalaryUnit(labelLower) {
+  if (!labelLower) return 'annual';
+  if (/stipend|internship compensation/i.test(labelLower)) return 'hourly';
+  if (/annual|yearly|per\s*year|\/\s*year|year\b/i.test(labelLower)) return 'annual';
+  if (/hourly|per\s*hour|\/\s*hour|hour\b|\b\/hr\b|\bhr\b/i.test(labelLower)) return 'hourly';
+  if (/weekly|per\s*week|\/\s*week|week\b/i.test(labelLower)) return 'weekly';
+  if (/monthly|per\s*month|\/\s*month|month\b/i.test(labelLower)) return 'monthly';
+  if (/range/i.test(labelLower)) return 'range-annual';
+  return 'annual';
+}
+
+function isNonUsdContext(jobDescription, roleLocation) {
+  const blob = `${roleLocation || ''} ${jobDescription || ''}`;
+  return NON_USD_TOKENS.test(blob);
+}
+
+// Extract a base hourly number from the JD. Returns { baseHourly: Number } or null.
+function extractBaseFromJD(jobDescription) {
+  if (!jobDescription) return null;
+  const text = jobDescription.replace(/\s+/g, ' ');
+
+  const INTERN_CTX = /(intern(ship)?|co-?op)[^.]{0,200}?\$?\s*(\d{1,6}(?:,\d{3})*(?:\.\d{1,2})?)(?:\s*[-–to]+\s*\$?\s*(\d{1,6}(?:,\d{3})*(?:\.\d{1,2})?))?[^.]{0,80}?(hour|hourly|per hour|\/hr|salary|compensation|pay|annual|year)/gi;
+  const GENERIC_CTX = /\$?\s*(\d{1,6}(?:,\d{3})*(?:\.\d{1,2})?)(?:\s*[-–to]+\s*\$?\s*(\d{1,6}(?:,\d{3})*(?:\.\d{1,2})?))?\s*(?:\/|per\s+)?(hour|hourly|hr|year|yr|annually|weekly|month|monthly)\b/gi;
+  const DOLLAR_RANGE = /\$\s*(\d{1,6}(?:,\d{3})*(?:\.\d{1,2})?)\s*[-–to]+\s*\$?\s*(\d{1,6}(?:,\d{3})*(?:\.\d{1,2})?)/gi;
+  const DOLLAR_SINGLE = /\$\s*(\d{1,6}(?:,\d{3})*(?:\.\d{1,2})?)/g;
+
+  const parseNum = (s) => parseFloat(String(s).replace(/,/g, ''));
+  const toBaseHourly = (base) => {
+    if (base < 150) return base;            // hourly
+    if (base < 1000) return base / 40;      // weekly
+    if (base < 10000) return base / 160;    // monthly
+    return base / 2080;                     // annual
+  };
+
+  const pickFromMatch = (lo, hi) => {
+    const low = parseNum(lo);
+    const high = hi != null ? parseNum(hi) : null;
+    const base = high != null && !isNaN(high) && high >= low ? (low + high) / 2 : low;
+    return toBaseHourly(base);
+  };
+
+  let m;
+  // 1) Intern-specific
+  while ((m = INTERN_CTX.exec(text)) !== null) {
+    const low = m[3], high = m[4];
+    if (low) return { baseHourly: pickFromMatch(low, high) };
+  }
+  // 2) Generic with unit word
+  while ((m = GENERIC_CTX.exec(text)) !== null) {
+    const low = m[1], high = m[2], unitWord = (m[3] || '').toLowerCase();
+    const lowNum = parseNum(low);
+    if (/hour|hr/.test(unitWord) && lowNum < 500) return { baseHourly: pickFromMatch(low, high) };
+    if (/year|yr|annually/.test(unitWord) && lowNum >= 10000) return { baseHourly: pickFromMatch(low, high) };
+    if (/week/.test(unitWord) && lowNum >= 150 && lowNum < 5000) return { baseHourly: pickFromMatch(low, high) };
+    if (/month/.test(unitWord) && lowNum >= 1000 && lowNum < 50000) return { baseHourly: pickFromMatch(low, high) };
+  }
+  // 3) Any dollar range
+  DOLLAR_RANGE.lastIndex = 0;
+  while ((m = DOLLAR_RANGE.exec(text)) !== null) {
+    return { baseHourly: pickFromMatch(m[1], m[2]) };
+  }
+  // 4) Any single dollar amount — only useful if it's plausibly a wage/salary number
+  DOLLAR_SINGLE.lastIndex = 0;
+  while ((m = DOLLAR_SINGLE.exec(text)) !== null) {
+    const n = parseNum(m[1]);
+    if (n >= 15 && n < 500) return { baseHourly: n };               // hourly-ish
+    if (n >= 1000 && n < 10000) return { baseHourly: n / 160 };     // monthly
+    if (n >= 30000 && n < 500000) return { baseHourly: n / 2080 };  // annual
+  }
+  return null;
+}
+
+function roundAnnual(n) { return Math.round(n / 1000) * 1000; }
+function roundHourly(n) { return Math.round(n); }
+
+function formatSalary(baseHourly, unit) {
+  const annual = baseHourly * 2080;
+  switch (unit) {
+    case 'annual': return `$${roundAnnual(annual).toLocaleString()}`;
+    case 'hourly': return `$${roundHourly(baseHourly)}/hour`;
+    case 'weekly': return `$${(roundHourly(baseHourly) * 40).toLocaleString()}/week`;
+    case 'monthly': return `$${(roundHourly(baseHourly) * 160).toLocaleString()}/month`;
+    case 'range-annual': {
+      const low = roundAnnual(annual * 0.9);
+      const high = roundAnnual(annual * 1.1);
+      return `$${low.toLocaleString()} - $${high.toLocaleString()}`;
+    }
+    case 'range-hourly': {
+      const low = roundHourly(baseHourly * 0.9);
+      const high = roundHourly(baseHourly * 1.1);
+      return `$${low} - $${high}/hour`;
+    }
+    default: return `$${roundAnnual(annual).toLocaleString()}`;
+  }
+}
+
+function defaultSalary(unit) {
+  const annual = PROFILE.salaryExpectation ? PROFILE.salaryExpectation.annual : 52000;
+  const hourly = PROFILE.salaryExpectation ? PROFILE.salaryExpectation.hourly : 25;
+  switch (unit) {
+    case 'annual': return `$${annual.toLocaleString()}`;
+    case 'hourly': return `$${hourly}/hour`;
+    case 'weekly': return `$${(hourly * 40).toLocaleString()}/week`;
+    case 'monthly': return `$${(hourly * 160).toLocaleString()}/month`;
+    case 'range-annual': return `$${(Math.round(annual * 0.9 / 1000) * 1000).toLocaleString()} - $${(Math.round(annual * 1.1 / 1000) * 1000).toLocaleString()}`;
+    case 'range-hourly': return `$${Math.round(hourly * 0.9)} - $${Math.round(hourly * 1.1)}/hour`;
+    default: return `$${annual.toLocaleString()}`;
+  }
+}
+
+// Legacy export kept for back-compat — returns a plain number string for hourly rate.
 function extractHourlyRateFromJD(jobDescription) {
   if (!jobDescription) return null;
   const text = jobDescription.replace(/\s+/g, ' ');
@@ -1053,41 +1181,33 @@ function extractHourlyRateFromJD(jobDescription) {
   return null;
 }
 
-async function generateSalaryAnswer(jobDescription, companyName, roleTitle) {
-  // Deterministic extractor first — avoids AI confusion between "$27 per hour" and
-  // "40 hours per week" living in the same job description.
-  const extracted = extractHourlyRateFromJD(jobDescription);
-  if (extracted) return extracted;
+async function generateSalaryAnswer(jobDescription, companyName, roleTitle, labelText = '', roleLocation = '') {
+  const labelLower = (labelText || '').toLowerCase();
 
-  // No usable rate in the JD — return "negotiable" per the documented rule.
-  // Only fall through to the AI fallback when the JD actually posts a numeric amount.
-  // The bare words "salary"/"compensation"/"pay range"/"hourly rate" are not enough —
-  // they appear in JDs that merely *ask* for expectations without posting any number,
-  // and the AI then returns a sentence ("There is no salary mentioned…") instead of a value.
-  // Require an explicit dollar amount — words like "401(k)" or bare "salary" do not count.
-  const hasSalaryRange = /\$\s*\d{2,}/i.test(jobDescription);
-  if (!hasSalaryRange) {
-    return 'negotiable';
+  // Step 1 — detect what unit is wanted.
+  let unit = detectSalaryUnit(labelLower);
+  if (unit === 'range-annual' && /hour/i.test(labelLower)) unit = 'range-hourly';
+
+  // Step 2 — non-USD context: return "Negotiable" and stop.
+  if (isNonUsdContext(jobDescription, roleLocation)) {
+    return 'Negotiable';
   }
 
-  // Fallback: an amount is mentioned but the regexes above couldn't isolate it.
-  // Ask the AI but tell it explicitly to ignore hours-per-week.
-  const salaryPrompt = `
-COMPANY: ${companyName}
-ROLE: ${roleTitle}
+  // Step 3 — extract base from JD.
+  const extracted = extractBaseFromJD(jobDescription);
+  if (extracted && extracted.baseHourly) {
+    // Step 4 — convert. Reasonability check: if internship and annual > 100k, fall back.
+    const annual = extracted.baseHourly * 2080;
+    const isIntern = /intern|co-?op/i.test(`${roleTitle || ''} ${jobDescription || ''}`);
+    if (isIntern && annual > 100000) {
+      console.log('[WARN] salary conversion produced unreasonable annual figure, falling back to profile default');
+      return defaultSalary(unit);
+    }
+    return formatSalary(extracted.baseHourly, unit);
+  }
 
-JOB DESCRIPTION:
-${jobDescription}
-
-TASK:
-A salary or hourly rate is posted in the job description above.
-- If a RANGE is given (e.g. "$30-$40/hr"), pick a single number in the upper-middle of that range.
-- If a SINGLE rate is given (e.g. "$27 per hour"), return that exact number.
-- IGNORE "40 hours per week" or any other reference to hours-worked. That is NOT the pay rate.
-Return ONLY that single number. No dollar signs. No words. No range. Just the number.
-`;
-
-  return await callGroq(SYSTEM_PROMPT, salaryPrompt, 50);
+  // Step 5 — no salary in JD, use profile defaults.
+  return defaultSalary(unit);
 }
 
 // ─────────────────────────────────────────────

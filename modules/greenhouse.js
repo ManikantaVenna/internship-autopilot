@@ -237,6 +237,25 @@ async function applyGreenhouse(job) {
       const countryInRS = await page.locator('[class*="select__control"]:has(#country)').count();
       if (countryInRS > 0) {
         await fillReactSelect(page, 'country', 'United States', 'United States');
+        // Some Greenhouse forms (e.g. DoubleVerify) clear adjacent standard fields when
+        // the country react-select fires. Re-fill if empty.
+        for (const [sel, val, name] of [
+          ['#first_name', profile.personal.firstName, 'first_name'],
+          ['#last_name',  profile.personal.lastName,  'last_name'],
+          ['#email',      profile.personal.email,     'email'],
+          ['#phone',      profile.personal.phone,     'phone'],
+        ]) {
+          try {
+            const loc = page.locator(sel);
+            if (await loc.count() > 0) {
+              const cur = await loc.inputValue().catch(() => '');
+              if (!cur) {
+                await loc.fill(val);
+                console.log(`[OK] Re-filled after country react-select: ${name}`);
+              }
+            }
+          } catch {}
+        }
       }
     } catch {}
 
@@ -768,7 +787,7 @@ async function handleCustomQuestions(page, jobDescription, company, roleTitle, p
       // "40 hours per week", etc). The rule: pull rate from JD if present, else "negotiable".
       if (/\b(salary|compensation|hourly pay|hourly rate|pay rate|pay expectation|compensation expectation|salary expectation|desired (pay|salary|compensation)|expected (pay|salary|compensation|hourly)|hourly compensation|wage)\b/i.test(labelLower)) {
         try {
-          const salaryAns = await generateSalaryAnswer(jobDescription, company, roleTitle);
+          const salaryAns = await generateSalaryAnswer(jobDescription, company, roleTitle, labelLower);
           await input.fill(salaryAns);
           console.log(`[SALARY] "${labelLower.substring(0, 40)}" -> "${salaryAns}"`);
         } catch (err) {
@@ -1929,7 +1948,7 @@ async function handleSalaryFields(page, jobDescription, company, roleTitle) {
       const ll = cleanLabel(label);
       if (!/salary|compensation|pay rate|wage|hourly rate|hourly pay|pay expectation|hourly compensation|desired pay|expected (pay|salary|hourly)/i.test(ll)) continue;
 
-      const salaryAns = await generateSalaryAnswer(jobDescription, company, roleTitle);
+      const salaryAns = await generateSalaryAnswer(jobDescription, company, roleTitle, ll);
       await input.fill(salaryAns);
       console.log(`[SALARY] Salary: "${ll.substring(0, 40)}" -> "${salaryAns}"`);
     } catch {}
@@ -2038,15 +2057,13 @@ function classifyDropdownAnswer(labelLower, options) {
   if (/employed by|worked at|worked for|have you worked at|have you been employed/i.test(labelLower))
     return find(['no', 'no i have not', 'no, i have not', 'i have not', 'never']);
 
-  // Fix 3: "legally eligible to work" — explicit check fires before generic pattern
+  // Fix 3: "legally eligible to work" — always Yes regardless of country.
   if (/legally eligible to work/i.test(labelLower)) {
-    if (_currentRoleIsNonUS) return find(['no', 'not currently', 'no, not currently', 'i am not']);
     return find(['yes', 'authorized', 'eligible', 'i am authorized', 'yes, i am']);
   }
 
-  // Work authorization
-  if (/authorized.*(work|employ)|legally authorized|work.*lawfully|eligible.*work/i.test(labelLower)) {
-    if (_currentRoleIsNonUS) return find(['no', 'not currently', 'no, not currently', 'i am not']);
+  // Work authorization — always Yes for any country.
+  if (/authorized.*(work|employ)|legally authorized|work.*lawfully|eligible.*work|lawfully authorized/i.test(labelLower)) {
     return find(['yes', 'authorized', 'eligible', 'i am authorized', 'yes, i am']);
   }
 
@@ -2242,6 +2259,11 @@ function classifyDropdownAnswer(labelLower, options) {
   if (/hours.*(per week|a week|weekly|you can commit|available|commit)|per week.*hours|how many hours/i.test(labelLower))
     return find(['40', '40 hours', 'full-time', 'full time', '40 hours per week', '35-40', '37.5', '30-40']);
 
+  // State / Province dropdown — answer Florida (FL)
+  if (/\b(state|province)\b/i.test(labelLower) && !/united states|country|statement|status/i.test(labelLower)) {
+    return find(['florida', 'fl', 'fl - florida', 'florida (fl)']);
+  }
+
   // Student status / academic year
   if (/current.*academic.*status|rising|junior|senior|sophomore/i.test(labelLower)) {
     // Try undergraduate matches first (Mani is a CS Junior, Bachelor's in progress).
@@ -2291,7 +2313,7 @@ function getStaticTextAnswer(labelLower, profile) {
   // "require an employ" catches both "require an employer" and "require an employment authorization"
   if (/require an employ|currently.*will you|will you.*future.*require|currently or will you|require.*visa|visa.*require|require.*sponsor|sponsor.*require/i.test(labelLower)) return _currentRoleIsNonUS ? 'Yes' : 'No';
   if (/\bsponsor\b/i.test(labelLower) && !/authorized to work|legally authorized/i.test(labelLower)) return _currentRoleIsNonUS ? 'Yes' : 'No';
-  if (/authorized to work|legally authorized|work.*lawfully/i.test(labelLower)) return _currentRoleIsNonUS ? 'No' : 'Yes';
+  if (/authorized to work|legally authorized|work.*lawfully|lawfully authorized|eligible to work/i.test(labelLower)) return 'Yes';
 
   // ── Voluntary self-id / demographic — checked FIRST to prevent wrong pattern matches ──
   if (/\bdisabilit|chronic condition/i.test(labelLower) && !/accommodation|history|prior|past/i.test(labelLower)) return 'No';
@@ -2330,9 +2352,14 @@ function getStaticTextAnswer(labelLower, profile) {
       !/sponsor|require an employ|visa|immigration|will you|work auth/i.test(labelLower)) return 'University of South Florida';
   if (/current.*(title|position|role)|most.?recent.*(title|position|role)/i.test(labelLower) && !/relocat/i.test(labelLower)) return 'C Programming Teaching Assistant';
 
-  if (/\bcity\b(?!.*state)/i.test(labelLower)) return profile.personal.city;
-  if (/\bstate\b(?!.*united)/i.test(labelLower)) return profile.personal.state;
-  if (/\bzip\b|\bpostal\b/i.test(labelLower)) return profile.personal.zip;
+  // ── Address fields ── (use profile.address block; fall back to legacy fields)
+  const addr = profile.address || {};
+  if (/address\s*line\s*2|address\s*2|apt|apartment|suite|unit\b/i.test(labelLower)) return addr.line2 || '';
+  if (/address\s*line\s*1|address\s*1|street\s*address|^address\b|mailing\s*address|home\s*address|residential\s*address/i.test(labelLower)) return addr.line1 || profile.personal.address;
+  if (/\bcity\b(?!.*state)/i.test(labelLower)) return addr.city || profile.personal.city;
+  if (/\bprovince\b/i.test(labelLower)) return addr.state || profile.personal.state;
+  if (/\bstate\b(?!.*united)/i.test(labelLower)) return addr.state || profile.personal.state;
+  if (/postal\s*code|\bzip\s*code\b|\bzip\b|\bpostal\b/i.test(labelLower)) return addr.zipCode || profile.personal.zip;
   if (/years.*experience.*python|python.*years/i.test(labelLower)) return '2';
   if (/years.*experience.*typescript|typescript.*years/i.test(labelLower)) return '2';
   if (/years.*experience.*javascript|javascript.*years/i.test(labelLower)) return '2';

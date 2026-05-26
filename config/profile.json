@@ -14,6 +14,21 @@
     "portfolio": ""
 },
 
+  "address": {
+    "line1": "14511 Valor Circle",
+    "line2": "",
+    "city": "Tampa",
+    "state": "Florida",
+    "stateCode": "FL",
+    "zipCode": "33620",
+    "country": "United States"
+  },
+
+  "salaryExpectation": {
+    "hourly": 25,
+    "annual": 52000
+  },
+
   "education": {
     "university": "University of South Florida",
     "degree": "Bachelor of Science",
