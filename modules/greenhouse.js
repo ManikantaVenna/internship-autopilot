@@ -71,7 +71,7 @@ async function readCharLimit(locator) {
 const HANDLED_IDS = new Set([
   'school--0', 'degree--0', 'discipline--0', 'end-month--0', 'end-year--0', 'start-year--0',
   'gender', 'hispanic_ethnicity', 'race', 'veteran_status', 'disability_status',
-  'candidate-location',
+  'candidate-location', 'country',
   'first_name', 'last_name', 'email', 'preferred_name', 'phone',
   'resume', 'cover_letter', 'linkedin_profile',
 ]);
@@ -189,6 +189,14 @@ async function applyGreenhouse(job) {
           await firstOption.click();
           console.log(`[OK] Filled: Location -> "${profile.personal.city}"`);
         }
+      }
+    } catch {}
+
+    // Country React-Select (present on most modern Greenhouse forms; required when present)
+    try {
+      const countryCount = await page.locator('#country').count();
+      if (countryCount > 0) {
+        await fillReactSelect(page, 'country', 'United States', 'United States');
       }
     } catch {}
 

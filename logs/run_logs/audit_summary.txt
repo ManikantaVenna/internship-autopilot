@@ -8,3 +8,4 @@ audit_20_fixed.txt     | app=20 | DoubleVerify              | audit=12 ok, 0 fai
 smoke_6.txt            | app=6  | Cloudflare                | audit=14 ok, 0 fail | warns=0 | demographics=filled  | note: standard Greenhouse form, all demographic dropdowns filled
 smoke_9.txt            | app=9  | Dorsia                    | audit=14 ok, 0 fail | warns=1 | demographics=absent  | note: form has no demographic section; remaining warn is a benign React-Select-not-found for #start-month--0
 checkpoint_19.txt      | app=19 | Aquatic Capital Management| audit=21 ok, 0 fail | warns=2 | demographics=absent  | note: form has no demographic section; warns are React-Select-not-found for month fields
+app_26 | company: Verkada | problem_types: country_react_select_missed | fixes: added_explicit_country_react_select_fill + added_country_to_HANDLED_IDS | status: clean
