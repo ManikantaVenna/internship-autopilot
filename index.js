@@ -4,6 +4,7 @@ const { parse } = require('csv-parse/sync');
 const { stringify } = require('csv-stringify/sync');
 const { detectPlatform } = require('./modules/detectPlatform');
 const { applyGreenhouse } = require('./modules/greenhouse');
+const { applyLever } = require('./modules/lever');
 
 // ─────────────────────────────────────────────
 // SECTION 1 — READ JOBS FROM CSV
@@ -75,8 +76,14 @@ async function main() {
       result = await applyGreenhouse(job);
 
     } else if (job.platform === 'lever') {
-      console.log('⚠️  Lever module not built yet. Marking for later.');
-      result = { status: 'skipped', reason: 'lever_not_built_yet' };
+      // Only process pending Lever jobs in full-run mode. --id mode lets us
+      // test/audit any single job and is gated above by the targetId filter.
+      if (!targetId && job.status !== 'pending') {
+        console.log(`⏭️  Lever job ${job.id} status=${job.status} — skipping (handler only processes pending).`);
+        result = { status: job.status, reason: '' };
+      } else {
+        result = await applyLever(job);
+      }
 
     } else if (job.platform === 'workday') {
       console.log('⚠️  Workday module not built yet. Marking for later.');
