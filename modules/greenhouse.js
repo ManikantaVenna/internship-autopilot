@@ -73,7 +73,7 @@ async function readCharLimit(locator) {
 // roles but is NOT authorized to work in Canada, Romania, etc. — those roles
 // genuinely require future sponsorship).
 let _currentRoleIsNonUS = false;
-const NON_US_COUNTRIES = /\b(romania|canada|united kingdom|\bu\.?k\.?\b|germany|france|spain|netherlands|ireland|sweden|switzerland|australia|singapore|japan|india|brazil|mexico|israel)\b/i;
+const NON_US_COUNTRIES = /\b(romania|canada|united kingdom|\bu\.?k\.?\b|germany|france|spain|netherlands|ireland|sweden|switzerland|australia|singapore|japan|india|brazil|mexico|israel|thailand|bangkok|vietnam|philippines|indonesia|malaysia|hong kong|taiwan|south korea|poland|portugal|italy|austria|belgium|denmark|finland|norway|czech|hungary|greece|turkey|south africa|new zealand|argentina|chile|colombia|uae|saudi arabia|qatar|kenya|nigeria|egypt)\b/i;
 function detectNonUsRoleFromJD(jobDescription) {
   if (!jobDescription) return false;
   const head = jobDescription.substring(0, 1500);
