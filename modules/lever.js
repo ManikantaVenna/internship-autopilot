@@ -412,7 +412,8 @@ async function applyLever(job) {
               return (lbl?.textContent || '').trim();
             });
             if (txt && txt.toLowerCase().includes(optionToClick.toLowerCase())) {
-              await r.check().catch(async () => { await r.click(); });
+              await r.check({ force: true, timeout: 3000 })
+                .catch(() => r.evaluate(el => el.click()));
               await page.waitForTimeout(800 + Math.floor(Math.random() * 700));
               console.log(`[FILLED] radio: ${label.slice(0, 70)} → ${txt}`);
               if (orange) console.log(`[ORANGE] relocation flagged for review`);
