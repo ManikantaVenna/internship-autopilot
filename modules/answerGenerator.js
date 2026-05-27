@@ -1034,7 +1034,7 @@ function detectSalaryUnit(labelLower) {
   if (/weekly|per\s*week|\/\s*week|week\b/i.test(labelLower)) return 'weekly';
   if (/monthly|per\s*month|\/\s*month|month\b/i.test(labelLower)) return 'monthly';
   if (/range/i.test(labelLower)) return 'range-annual';
-  return 'annual';
+  return 'hourly';
 }
 
 function isNonUsdContext(jobDescription, roleLocation) {
