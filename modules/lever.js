@@ -228,6 +228,38 @@ async function applyLever(job) {
   console.log(`[CUSTOM] found ${customWrappers.length} custom question wrappers`);
 
   for (const wrapper of customWrappers) {
+    // ── Identify the primary input name (used to protect standard fields)
+    const primaryInputName = await wrapper.evaluate(el => {
+      const inp = el.querySelector('input[name]:not([type="hidden"]), textarea[name], select[name]');
+      return inp ? (inp.getAttribute('name') || '') : '';
+    });
+
+    // Bug 1: skip standard fields already filled by standardFields step. Never call AI on them.
+    if (/^(name|email|phone|org|location)$/.test(primaryInputName)) {
+      console.log(`[SKIPPED-standard] ${primaryInputName} already filled`);
+      continue;
+    }
+
+    // Bug 2: URL fields receive raw URL or "N/A" only — never AI prose.
+    if (primaryInputName.startsWith('urls[')) {
+      const urlInput = await wrapper.$(`[name="${primaryInputName.replace(/"/g, '\\"')}"]`);
+      if (urlInput) {
+        const nm = primaryInputName.toLowerCase();
+        let urlValue;
+        if (nm.includes('personal website') || nm.includes('portfolio')) urlValue = 'N/A';
+        else urlValue = PROFILE.personal.linkedin;
+        try {
+          await urlInput.fill('');
+          await urlInput.fill(urlValue);
+          console.log(`[FILLED] ${primaryInputName} → ${urlValue}`);
+          confidences.push(1.0);
+        } catch (err) {
+          console.log(`[ERROR] url fill failed for ${primaryInputName}: ${err.message.split('\n')[0]}`);
+        }
+      }
+      continue;
+    }
+
     let label = '';
     try {
       label = (await wrapper.$eval('.application-label', el => el.textContent.trim())) || '';
@@ -236,6 +268,51 @@ async function applyLever(job) {
     }
     label = label.replace(/\s+/g, ' ').replace(/[*✱]\s*$/, '').trim();
     if (!label) continue;
+
+    const lowerLabel = label.toLowerCase();
+
+    // Bug 5: deterministic answers, before orange/AI handling.
+    if (/how did you hear/.test(lowerLabel)) {
+      const inp = await wrapper.$('input[type="text"], input[type="email"], input[type="url"], textarea, input:not([type])');
+      if (inp) {
+        try {
+          await inp.fill('Job board');
+          console.log(`[FILLED] how-did-you-hear → Job board`);
+          confidences.push(1.0);
+        } catch (err) {
+          console.log(`[ERROR] how-did-you-hear fill failed: ${err.message.split('\n')[0]}`);
+        }
+      }
+      continue;
+    }
+    if (/who referred you|if you were referred/.test(lowerLabel)) {
+      const inp = await wrapper.$('input[type="text"], input[type="email"], input[type="url"], textarea, input:not([type])');
+      if (inp) {
+        try {
+          await inp.fill('I was not referred for this role.');
+          console.log(`[FILLED] referral → I was not referred for this role.`);
+          confidences.push(1.0);
+        } catch (err) {
+          console.log(`[ERROR] referral fill failed: ${err.message.split('\n')[0]}`);
+        }
+      }
+      continue;
+    }
+
+    // Bug 4: GPA → 4.0
+    if (/\bgpa\b/i.test(label)) {
+      const inp = await wrapper.$('input[type="text"], input[type="number"], input:not([type])');
+      if (inp) {
+        try {
+          await inp.fill('4.0');
+          console.log(`[FILLED] GPA → 4.0`);
+          confidences.push(1.0);
+        } catch (err) {
+          console.log(`[ERROR] GPA fill failed: ${err.message.split('\n')[0]}`);
+        }
+      }
+      continue;
+    }
 
     if (isOrangeFlag(label)) {
       console.log(`[ORANGE-SKIP] ${label}`);
@@ -288,7 +365,9 @@ async function applyLever(job) {
           await inputHandle.fill(answer);
           console.log(`[ESSAY] answered: ${label}`);
         } else {
-          console.log(`[SKIPPED-optional] ${label} (no answer generated)`);
+          const reqInput = await isFieldRequired(inputHandle).catch(() => false);
+          if (reqInput) console.log(`[WARN] skipped required field: ${label}`);
+          else console.log(`[SKIPPED-optional] ${label} (no answer generated)`);
         }
       } else if (checkboxHandle) {
         const defaults = ANSWERS.checkboxDefaults || {};
@@ -307,8 +386,39 @@ async function applyLever(job) {
         }
         confidences.push(0.7);
       } else if (radioHandle) {
-        console.log(`[SKIPPED-optional] ${label} (radio group — needs manual review)`);
-        confidences.push(0.4);
+        // Bug 3: deterministic radio selection by label.
+        const lr = label.toLowerCase();
+        let optionToClick = null;
+        let orange = false;
+        if (/authorized to work in the united states/.test(lr)) optionToClick = 'Yes';
+        else if (/visa sponsorship|require sponsorship/.test(lr)) optionToClick = 'No';
+        else if (/currently enrolled|undergraduate|phd program/.test(lr)) optionToClick = 'Undergrad';
+        else if (/relocat/.test(lr)) { optionToClick = 'No'; orange = true; }
+
+        let clicked = false;
+        if (optionToClick) {
+          const radios = await wrapper.$$('input[type="radio"]');
+          for (const r of radios) {
+            const txt = await r.evaluate(el => {
+              const lbl = el.closest('label') || (el.id ? document.querySelector(`label[for="${el.id}"]`) : null);
+              return (lbl?.textContent || '').trim();
+            });
+            if (txt && txt.toLowerCase().includes(optionToClick.toLowerCase())) {
+              await r.check().catch(async () => { await r.click(); });
+              console.log(`[FILLED] radio: ${label.slice(0, 70)} → ${txt}`);
+              if (orange) console.log(`[ORANGE] relocation flagged for review`);
+              clicked = true;
+              confidences.push(0.9);
+              break;
+            }
+          }
+        }
+        if (!clicked) {
+          console.log(`[ORANGE] unrecognized radio: ${label}`);
+          const reqRadio = await isFieldRequired(radioHandle).catch(() => false);
+          if (reqRadio) console.log(`[WARN] skipped required field: ${label}`);
+          confidences.push(0.4);
+        }
       } else {
         console.log(`[SKIPPED-optional] ${label} (unknown input type)`);
       }
@@ -319,19 +429,27 @@ async function applyLever(job) {
 
   // ── STEP 7: final audit — every visible required field has a non-empty value.
   const requiredFields = await page.$$('input[required], textarea[required], select[required], input[aria-required="true"], textarea[aria-required="true"], select[aria-required="true"]');
+  const seenAudit = new Set();
   for (const el of requiredFields) {
     const info = await el.evaluate(node => {
       const isVisible = !!(node.offsetWidth || node.offsetHeight || node.getClientRects().length);
       const type = (node.getAttribute('type') || node.tagName || '').toLowerCase();
-      let nameAttr = node.getAttribute('name') || node.id || node.getAttribute('aria-label') || '';
+      const nameAttr = node.getAttribute('name') || node.id || node.getAttribute('aria-label') || '';
       let value = node.value || '';
-      if (type === 'checkbox' || type === 'radio') value = node.checked ? 'on' : '';
+      if (type === 'radio') {
+        const grp = document.querySelectorAll(`input[type="radio"][name="${(node.getAttribute('name') || '').replace(/"/g, '\\"')}"]`);
+        value = Array.from(grp).some(r => r.checked) ? 'on' : '';
+      } else if (type === 'checkbox') {
+        value = node.checked ? 'on' : '';
+      }
       const wrapper = node.closest('.application-question, .application-additional');
       const label = wrapper?.querySelector('.application-label, label')?.textContent?.trim() || '';
       return { isVisible, nameAttr, value: String(value).trim(), label };
     });
     if (!info.isVisible) continue;
     const fieldName = info.nameAttr || info.label.slice(0, 50) || 'unknown';
+    if (seenAudit.has(fieldName)) continue;
+    seenAudit.add(fieldName);
     if (info.value) {
       console.log(`[AUDIT-OK] ${fieldName}`);
       audit.push({ name: fieldName, ok: true });
