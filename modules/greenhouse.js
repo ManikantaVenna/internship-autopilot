@@ -1946,7 +1946,16 @@ async function handleSalaryFields(page, jobDescription, company, roleTitle) {
       const label = await getFieldLabel(page, input);
       if (!label) continue;
       const ll = cleanLabel(label);
-      if (!/salary|compensation|pay rate|wage|hourly rate|hourly pay|pay expectation|hourly compensation|desired pay|expected (pay|salary|hourly)/i.test(ll)) continue;
+      // Only match true "what is your expected salary?" questions. Statements
+      // like "This is a paid position with an hourly rate of $25..." mention
+      // "hourly rate" but are acknowledgement Yes/No dropdowns, not text fields
+      // asking for the candidate's number. Require an asking-cue: expectation /
+      // expected / desired / what is your / your (target|desired|expected).
+      if (!/\b(salary expectation|compensation expectation|pay expectation|expected (pay|salary|compensation|hourly)|desired (pay|salary|compensation|hourly)|your (expected|desired|target) (pay|salary|compensation|hourly|wage|rate)|what (is|are) your.*(salary|compensation|pay|wage|hourly))\b/i.test(ll)) continue;
+      // Defensive: if the field's label is an informational statement that
+      // states the rate ("this is a paid position", "is offered at", "is set at",
+      // "we offer", "rate of $"), it is not asking for the candidate's number.
+      if (/\b(this is a paid|is offered at|is set at|we offer|rate of \$|salary of \$|paid at \$)\b/i.test(ll)) continue;
 
       const salaryAns = await generateSalaryAnswer(jobDescription, company, roleTitle, ll);
       await input.fill(salaryAns);

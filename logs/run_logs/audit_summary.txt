@@ -14,3 +14,4 @@ app_28 | company: Constant Contact | problem_types: none | fixes: none | status:
 app_29 | company: Bandwidth | problem_types: non_us_role_sponsorship_answered_wrong | fixes: detect non-US role from scraped job location and flip sponsorship/work-auth classifier answers accordingly | status: clean (Romania role; needs_review on jobs.csv)
 app_30 | company: StackAdapt | problem_types: none (benefits from app_29 non-US detection fix) | fixes: none new | status: clean (Canada role; needs_review on jobs.csv)
 app_31 | company: Avride | problem_types: graduation_date_field_skipped_by_overbroad_date_filter, country_react_select_on_text_input_disturbed_basic_fields | fixes: narrow date filter to birth/dob/ssn only, guard fillReactSelect(country) to only fire when #country is actually inside a select__control | status: clean
+app_32 | company: Allen Institute | problem_types: none | fixes: none | status: clean
