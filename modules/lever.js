@@ -287,8 +287,9 @@ async function applyLever(job) {
         } catch (err) {
           console.log(`[ERROR] how-did-you-hear fill failed: ${err.message.split('\n')[0]}`);
         }
+        continue;
       }
-      continue;
+      // No text input — fall through so the generic select/radio/AI handler can fill it.
     }
     if (/who referred you|if you were referred/.test(lowerLabel)) {
       const inp = await wrapper.$('input[type="text"], input[type="email"], input[type="url"], textarea, input:not([type])');
