@@ -20,3 +20,4 @@ app_34 | company: Cerebras | problem_types: none | fixes: none | status: clean
 app_35 | company: Sertis | problem_types: non_us_role_detection_missed_thailand | fixes: expand_NON_US_COUNTRIES_regex_with_thailand_and_other_common_countries | status: clean (Thailand role; needs_review)
 app_36 | company: Businessolver | problem_types: none | fixes: none | status: clean
 app_37 | company: Celonis | problem_types: none | fixes: none | status: clean
+app_38 | company: AI Safety | problem_types: standard_overwrite, radio_skip, cards_empty, gpa_empty, url_prose, audit_dedup | fixes: field_protection, radio_handler, cards_handler, gpa_direct, url_raw, dedup | status: clean

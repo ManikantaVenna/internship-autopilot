@@ -169,6 +169,7 @@ async function applyLever(job) {
     try {
       await handle.fill('');
       await handle.fill(f.value);
+      await page.waitForTimeout(800 + Math.floor(Math.random() * 700));
       console.log(`[FILLED] ${f.name}`);
       confidences.push(f.score);
     } catch (err) {
@@ -191,6 +192,7 @@ async function applyLever(job) {
     }
     try {
       await handle.fill(PROFILE.personal.linkedin);
+      await page.waitForTimeout(800 + Math.floor(Math.random() * 700));
       console.log(`[FILLED] ${optName} (LinkedIn fallback)`);
       confidences.push(0.7);
     } catch (err) {
@@ -215,6 +217,7 @@ async function applyLever(job) {
       } else {
         await fileInput.setInputFiles(RESUME_PATH);
         await page.waitForTimeout(1500);
+        await page.waitForTimeout(800 + Math.floor(Math.random() * 700));
         console.log('[RESUME] upload confirmed');
         confidences.push(1.0);
       }
@@ -251,6 +254,7 @@ async function applyLever(job) {
         try {
           await urlInput.fill('');
           await urlInput.fill(urlValue);
+          await page.waitForTimeout(800 + Math.floor(Math.random() * 700));
           console.log(`[FILLED] ${primaryInputName} → ${urlValue}`);
           confidences.push(1.0);
         } catch (err) {
@@ -277,6 +281,7 @@ async function applyLever(job) {
       if (inp) {
         try {
           await inp.fill('Job board');
+          await page.waitForTimeout(800 + Math.floor(Math.random() * 700));
           console.log(`[FILLED] how-did-you-hear → Job board`);
           confidences.push(1.0);
         } catch (err) {
@@ -290,6 +295,7 @@ async function applyLever(job) {
       if (inp) {
         try {
           await inp.fill('I was not referred for this role.');
+          await page.waitForTimeout(800 + Math.floor(Math.random() * 700));
           console.log(`[FILLED] referral → I was not referred for this role.`);
           confidences.push(1.0);
         } catch (err) {
@@ -305,6 +311,7 @@ async function applyLever(job) {
       if (inp) {
         try {
           await inp.fill('4.0');
+          await page.waitForTimeout(800 + Math.floor(Math.random() * 700));
           console.log(`[FILLED] GPA → 4.0`);
           confidences.push(1.0);
         } catch (err) {
@@ -363,6 +370,7 @@ async function applyLever(job) {
         }
         if (answer) {
           await inputHandle.fill(answer);
+          await page.waitForTimeout(800 + Math.floor(Math.random() * 700));
           console.log(`[ESSAY] answered: ${label}`);
         } else {
           const reqInput = await isFieldRequired(inputHandle).catch(() => false);
@@ -405,6 +413,7 @@ async function applyLever(job) {
             });
             if (txt && txt.toLowerCase().includes(optionToClick.toLowerCase())) {
               await r.check().catch(async () => { await r.click(); });
+              await page.waitForTimeout(800 + Math.floor(Math.random() * 700));
               console.log(`[FILLED] radio: ${label.slice(0, 70)} → ${txt}`);
               if (orange) console.log(`[ORANGE] relocation flagged for review`);
               clicked = true;
