@@ -388,7 +388,8 @@ async function applyLever(job) {
         else if (/disab/.test(lower)) shouldCheck = defaults.disability === true;
         else if (/(agree|consent|terms|background|certif)/.test(lower)) shouldCheck = true;
         if (shouldCheck) {
-          await checkboxHandle.check().catch(async () => { await checkboxHandle.click(); });
+          await checkboxHandle.check({ force: true, timeout: 3000 })
+            .catch(() => checkboxHandle.evaluate(el => el.click()));
           console.log(`[ESSAY] answered: ${label} -> checked`);
         } else {
           console.log(`[ESSAY] answered: ${label} -> unchecked`);
